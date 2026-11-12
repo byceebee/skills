@@ -1,5 +1,5 @@
 ---
-name: ceebee-layout-witness
+name: layout-witness
 description: Guide layout edits with live browser overlays and measured evidence. Use when implementing or reviewing a running web page against explicit alignment, spacing, or responsive requirements.
 license: MIT
 ---

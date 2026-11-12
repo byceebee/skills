@@ -4,15 +4,15 @@ Agent skills from [byceebee](https://ceebee.biz.id).
 
 | Skill | What it does |
 | --- | --- |
-| [Layout Witness](skills/ceebee-layout-witness/SKILL.md) | Keep layout guides on a running page and turn browser measurements into evidence a coding agent can act on. |
+| [Layout Witness](skills/layout-witness/SKILL.md) | Keep layout guides on a running page and turn browser measurements into evidence a coding agent can act on. |
 
 ## Install Layout Witness
 
 ```sh
-npx skills add byceebee/skills --skill ceebee-layout-witness
+npx skills add byceebee/skills --skill layout-witness
 ```
 
-You can also copy the entire `skills/ceebee-layout-witness` directory into your agent's skills folder. Set up Node.js and Chromium using the [skill instructions](skills/ceebee-layout-witness/SKILL.md).
+You can also copy the entire `skills/layout-witness` directory into your agent's skills folder. Set up Node.js and Chromium using the [skill instructions](skills/layout-witness/SKILL.md).
 
 ## Use it on your dev server
 
@@ -23,7 +23,7 @@ The current CLI opens a separate Chromium window for live inspection and uses Pl
 <details>
 <summary>Try the included demo</summary>
 
-Clone this repository and run these commands from `skills/ceebee-layout-witness`.
+Clone this repository and run these commands from `skills/layout-witness`.
 
 ```sh
 npm ci
@@ -41,6 +41,6 @@ Edit a spacing value in the demo and reload the page in the inspector window. Th
 
 </details>
 
-The [rules reference](skills/ceebee-layout-witness/references/rules.md) shows how to define regions and checks for your app.
+The [rules reference](skills/layout-witness/references/rules.md) shows how to define regions and checks for your app.
 
 [MIT license](LICENSE)
