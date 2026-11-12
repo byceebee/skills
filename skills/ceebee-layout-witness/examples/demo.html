@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workspace layout fixture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: #f4f6f8;
+        --surface: #fff;
+        --ink: #263443;
+        --muted: #526273;
+        --quiet: #687887;
+        --rule: #d9e0e7;
+        --selected: #eaf0f3;
+        --selected-ink: #294d62;
+        font-family: Arial, Helvetica, sans-serif;
+        color: var(--ink);
+        background: var(--canvas);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+      }
+
+      .app-header {
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        height: 68px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--rule);
+        background: var(--surface);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: #426b82;
+      }
+
+      .search-box {
+        max-width: 420px;
+        height: 36px;
+        padding: 9px 12px;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        color: var(--quiet);
+        font-size: 13px;
+      }
+
+      .account-label {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .app-layout {
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr);
+        min-height: calc(100vh - 68px);
+      }
+
+      .sidebar {
+        padding: 20px;
+        border-right: 1px solid var(--rule);
+        background: var(--surface);
+      }
+
+      .sidebar-title {
+        margin: 0 0 14px;
+        color: var(--quiet);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 16px;
+        text-transform: uppercase;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .nav-item {
+        padding: 9px 10px;
+        border-radius: 5px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 20px;
+      }
+
+      .nav-item[aria-current="page"] {
+        background: var(--selected);
+        color: var(--selected-ink);
+        font-weight: 700;
+      }
+
+      .main-content {
+        min-width: 0;
+        padding: 28px 24px 36px;
+      }
+
+      .page-heading {
+        margin: 0 0 6px;
+        color: var(--ink);
+        font-size: 26px;
+        font-weight: 700;
+        line-height: 34px;
+      }
+
+      .page-description {
+        margin: 0 0 24px;
+        color: var(--quiet);
+        font-size: 14px;
+        line-height: 20px;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .card {
+        min-height: 190px;
+        padding: 20px;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        line-height: 22px;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--quiet);
+        font-size: 13px;
+        line-height: 19px;
+      }
+
+      .detail-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .detail-row svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #111820;
+          --surface: #18222d;
+          --ink: #eef3f7;
+          --muted: #c0ccd8;
+          --quiet: #9fb0bf;
+          --rule: #334454;
+          --selected: #23394a;
+          --selected-ink: #b6e0f4;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .app-header {
+          grid-template-columns: 1fr auto;
+          gap: 12px;
+          height: 64px;
+          padding: 0 16px;
+        }
+
+        .search-box {
+          display: none;
+        }
+
+        .app-layout {
+          grid-template-columns: minmax(0, 1fr);
+          min-height: calc(100vh - 64px);
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .main-content {
+          padding: 24px 16px 32px;
+        }
+
+        .card-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Northstar Workspace</span></div>
+      <div class="search-box" aria-label="Search">Search workspace</div>
+      <div class="account-label">Morgan Lee</div>
+    </header>
+
+    <div class="app-layout">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <p class="sidebar-title">Workspace</p>
+        <nav>
+          <ul class="nav-list">
+            <li class="nav-item" aria-current="page">Overview</li>
+            <li class="nav-item">Projects</li>
+            <li class="nav-item">Documents</li>
+            <li class="nav-item">Activity</li>
+          </ul>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <h1 class="page-heading">Workspace overview</h1>
+        <p class="page-description">A summary of current work and recent updates.</p>
+
+        <section class="card-grid" aria-label="Workspace summaries">
+          <article class="card">
+            <h2>Project North</h2>
+            <p>Planning and notes for the next team milestone.</p>
+            <div class="detail-row">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5" /></svg>
+              <span>Updated today</span>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Shared library</h2>
+            <p>Reference material collected by the workspace team.</p>
+            <div class="detail-row">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5" /></svg>
+              <span>12 items</span>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Team activity</h2>
+            <p>Recent changes from people in this workspace.</p>
+            <div class="detail-row">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3l5 5-5 5" /></svg>
+              <span>3 new updates</span>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

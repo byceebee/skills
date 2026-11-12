@@ -1,0 +1,128 @@
+{
+  "regions": [
+    {
+      "id": "header-band",
+      "selector": ".app-header",
+      "columns": 3,
+      "gap": 16,
+      "inset": 20
+    },
+    {
+      "id": "sidebar-band",
+      "selector": ".sidebar",
+      "columns": 1,
+      "gap": 6,
+      "inset": 20,
+      "minWidth": 1024
+    },
+    {
+      "id": "content-band",
+      "selector": ".main-content",
+      "columns": 1,
+      "gap": 16,
+      "inset": 24
+    },
+    {
+      "id": "card-band",
+      "selector": ".card-grid",
+      "columns": 3,
+      "gap": 16,
+      "inset": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "mobile-cards",
+      "selector": ".card-grid",
+      "columns": 1,
+      "maxWidth": 1023
+    }
+  ],
+  "checks": [
+    {
+      "id": "desktop-header-height",
+      "selector": ".app-header",
+      "metric": "height",
+      "expected": 68,
+      "tolerance": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "desktop-sidebar-width",
+      "selector": ".sidebar",
+      "metric": "width",
+      "expected": 240,
+      "tolerance": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "desktop-content-start",
+      "selector": ".main-content",
+      "metric": "left",
+      "expected": 240,
+      "tolerance": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "desktop-content-inset",
+      "selector": ".main-content",
+      "metric": "padding-left",
+      "expected": 24,
+      "tolerance": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "desktop-card-gap",
+      "selector": ".card-grid",
+      "metric": "column-gap",
+      "expected": 16,
+      "tolerance": 0,
+      "minWidth": 1024
+    },
+    {
+      "id": "heading-line-height",
+      "selector": ".page-heading",
+      "metric": "line-height",
+      "expected": 34,
+      "tolerance": 0
+    },
+    {
+      "id": "nested-icon-stroke",
+      "selector": ".card-grid > :first-child .detail-row svg",
+      "metric": "stroke-width",
+      "expected": 2,
+      "tolerance": 0
+    },
+    {
+      "id": "mobile-header-height",
+      "selector": ".app-header",
+      "metric": "height",
+      "expected": 64,
+      "tolerance": 0,
+      "maxWidth": 700
+    },
+    {
+      "id": "mobile-content-inset",
+      "selector": ".main-content",
+      "metric": "padding-left",
+      "expected": 16,
+      "tolerance": 0,
+      "maxWidth": 700
+    },
+    {
+      "id": "mobile-card-gap",
+      "selector": ".card-grid",
+      "metric": "row-gap",
+      "expected": 16,
+      "tolerance": 0,
+      "maxWidth": 700
+    },
+    {
+      "id": "mobile-horizontal-overflow",
+      "selector": "body",
+      "metric": "horizontal-overflow",
+      "expected": 0,
+      "tolerance": 0,
+      "maxWidth": 700
+    }
+  ]
+}
