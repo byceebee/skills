@@ -1,6 +1,6 @@
 # CeeBee Skills
 
-Agent skills with tools you can run from your own projects.
+Agent skills from [byceebee](https://ceebee.biz.id).
 
 | Skill | What it does |
 | --- | --- |
@@ -14,7 +14,14 @@ npx skills add byceebee/skills --skill ceebee-layout-witness
 
 You can also copy the entire `skills/ceebee-layout-witness` directory into your agent's skills folder. Set up Node.js and Chromium using the [skill instructions](skills/ceebee-layout-witness/SKILL.md).
 
-## Try the included example
+## Use it on your dev server
+
+Run your app as usual and point Layout Witness at its local URL. The skill runs the inspector from its own directory, so your app can use its existing dev server and dependencies.
+
+The current CLI opens a separate Chromium window for live inspection and uses Playwright for automated captures. Install its dependencies and Chromium once in the skill directory.
+
+<details>
+<summary>Try the included demo</summary>
 
 Clone this repository and run these commands from `skills/ceebee-layout-witness`.
 
@@ -32,6 +39,8 @@ node scripts/witness.mjs watch http://127.0.0.1:4173 --config examples/rules.jso
 
 Edit a spacing value in the demo and reload the page in the inspector window. The guide follows the new geometry, and the reported evidence directory contains the updated overlay and JSON. Use `capture` with `--strict` to review desktop and mobile in both themes.
 
-The example runs locally and can be replaced with a dev URL and rules from any web project. The [rules reference](skills/ceebee-layout-witness/references/rules.md) shows how to define regions and checks.
+</details>
+
+The [rules reference](skills/ceebee-layout-witness/references/rules.md) shows how to define regions and checks for your app.
 
 [MIT license](LICENSE)
