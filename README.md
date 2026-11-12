@@ -20,7 +20,25 @@ Choose **Inspect element** and pick a button, icon, or layout region. Click it, 
 
 Chrome can restore the guide after a reload while it retains extension access to that page on the same origin. After navigating to another origin, activate the extension again from the toolbar. Imported rules are stored separately for each origin. Inspection and rule storage run locally in Chrome.
 
-Give your agent the downloaded report’s path. It can compare the measured values with the project rules and check a second report after editing.
+## Let an agent control the active tab
+
+From `skills/layout-witness`, install the local connection and start it in a persistent terminal.
+
+```sh
+npm ci --omit=dev
+node scripts/agent.mjs serve
+```
+
+On your dev tab, open **Layout Witness → Agent access**, paste the pairing URL, and connect. The agent can now control the extension and read JSON directly from the terminal.
+
+```sh
+node scripts/agent.mjs start
+node scripts/agent.mjs select 'header [aria-label="Search"]'
+node scripts/agent.mjs measure
+node scripts/agent.mjs stop
+```
+
+Run `measure` again after a CSS edit. The selected element and its guides stay in the same tab during development. The connection uses Node.js 22+ and Chrome 116+. It stays on the local machine and ends when the connected tab changes origin or closes. See the [skill instructions](skills/layout-witness/SKILL.md) for every command.
 
 ## Install the agent skill
 
@@ -32,7 +50,7 @@ You can also copy the entire `skills/layout-witness` directory into your agent's
 
 ## Optional unattended captures
 
-The CLI remains available for scripted capture runs that need a fresh browser context and Playwright. This path is optional; the extension does not need npm, Node.js, or Playwright.
+The CLI remains available for scripted capture runs that need a fresh browser context and Playwright. Manual extension use runs directly in Chrome. The local agent connection uses Node.js. Playwright is needed for this separate capture workflow.
 
 <details>
 <summary>Try the included demo</summary>

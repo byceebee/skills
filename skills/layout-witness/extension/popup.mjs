@@ -7,6 +7,9 @@ const reset = select('reset');
 const fileInput = select('rules-file');
 const download = select('download');
 const message = select('message');
+const connect = select('connect-agent');
+const disconnect = select('disconnect-agent');
+const controls = [toggle, pick, clear, importButton, reset, download, connect, disconnect];
 
 let tabId;
 let state;
@@ -105,7 +108,8 @@ function drawElement(element) {
   properties('element-style', [
     ['Font family', typography.fontFamily], ['Font size', typography.fontSize],
     ['Font weight', typography.fontWeight], ['Line height', typography.lineHeight],
-    ['Letter spacing', typography.letterSpacing], ['Display', layout.display],
+    ['Letter spacing', typography.letterSpacing], ['Baseline (viewport Y)', typography.baselineY == null ? null : pixels(typography.baselineY)],
+    ['Display', layout.display],
     ['Box sizing', layout.boxSizing], ['Row gap', layout.rowGap], ['Column gap', layout.columnGap],
     ['Grid columns', layout.columns], ['Grid rows', layout.rows],
   ].filter(([, value]) => value));
@@ -128,6 +132,10 @@ function draw(state) {
   select('origin').textContent = state.origin;
   select('rule-name').textContent = state.label;
   reset.hidden = !state.hasCustomRules;
+  select('agent-status').textContent = state.agentConnected ? 'Connected to this tab' : 'Disconnected';
+  select('agent-status').toggleAttribute('data-connected', state.agentConnected);
+  select('agent-pair').hidden = state.agentConnected;
+  select('agent-connected').hidden = !state.agentConnected;
   toggle.textContent = state.report ? 'Stop guides' : 'Start guides';
   const running = Boolean(state.report);
   if (toggle.hasAttribute('data-running') !== running) select('rule-settings').open = !running;
@@ -174,7 +182,7 @@ async function act(operation) {
   if (busy) return;
   busy = true;
   status();
-  for (const button of [toggle, pick, clear, importButton, reset, download]) button.disabled = true;
+  for (const button of controls) button.disabled = true;
   try {
     await operation();
     draw(state);
@@ -183,7 +191,7 @@ async function act(operation) {
     status(error.message, true);
   } finally {
     busy = false;
-    for (const button of [toggle, pick, clear, importButton, reset, download]) button.disabled = !state;
+    for (const button of controls) button.disabled = !state;
   }
 }
 
@@ -222,6 +230,15 @@ reset.addEventListener('click', () => act(async () => {
   state = await request('defaults');
   status('Default guides restored.');
 }));
+select('agent-pair').addEventListener('submit', (event) => {
+  event.preventDefault();
+  act(async () => {
+    const input = select('pairing-url');
+    state = await request('connect-agent', { label: input.value });
+    input.value = '';
+  });
+});
+disconnect.addEventListener('click', () => act(async () => { state = await request('disconnect-agent'); }));
 download.addEventListener('click', () => act(async () => {
   state = await request('status');
   if (!state.report) throw new Error('Start guides to measure this tab.');
@@ -242,7 +259,7 @@ await act(async () => {
 });
 
 setInterval(async () => {
-  if (busy || !state?.report) return;
+  if (busy || !state) return;
   const previous = state;
   try {
     const current = await request('status');

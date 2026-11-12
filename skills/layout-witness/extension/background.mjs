@@ -1,6 +1,7 @@
 import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
 import { inspectElement } from './element.mjs';
+import { agentConnected, connectAgent, disconnectAgent } from './agent.mjs';
 
 const guides = parseRules({
   regions: [
@@ -62,14 +63,21 @@ async function activate(tabId, origin, config) {
   return report;
 }
 
-async function handleMessage({ action, tabId, rules, label }) {
+async function handleMessage({ action, tabId, rules, label, selector }, expectedOrigin) {
   const tab = await chrome.tabs.get(tabId);
   const origin = tabOrigin(tab.url);
   if (!origin) throw new Error('Open an HTTP or HTTPS tab to inspect its layout.');
+  if (expectedOrigin && origin !== expectedOrigin) throw new Error('The connected tab changed sites. Pair it again from the toolbar.');
+  if (action === 'connect-agent') {
+    await connectAgent(label, tabId, origin, (request) =>
+      inOrder(tabId, () => handleMessage({ ...request, tabId }, origin)));
+  }
+  if (action === 'disconnect-agent') disconnectAgent(tabId);
   const key = sessionKey(tabId);
   const enabled = (await chrome.storage.session.get(key))[key] === origin;
   let current = await settings(origin);
   let report = null;
+  if (!enabled && ['pick', 'select', 'clear'].includes(action)) throw new Error('Start guides before selecting an element.');
 
   if (action === 'import' || action === 'defaults') {
     current = action === 'import'
@@ -84,16 +92,19 @@ async function handleMessage({ action, tabId, rules, label }) {
     await chrome.storage.session.remove([key, elementKey(tabId)]);
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
-  } else if (['status', 'pick', 'clear'].includes(action) && enabled) {
+  } else if (['status', 'pick', 'select', 'clear', 'connect-agent', 'disconnect-agent'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config) ?? await activate(tabId, origin, current.config);
   }
 
   if (action === 'clear' || action === 'pick') await chrome.storage.session.remove(elementKey(tabId));
-  const selection = report
-    ? await inspect(tabId, origin, action === 'pick' || action === 'clear' ? action : 'status')
-    : null;
-  if (report && selection.element) report.element = selection.element;
-  return { origin, label: current.label, hasCustomRules: current.custom, report, selection };
+  const selectionAction = ['pick', 'select', 'clear'].includes(action) ? action : 'status';
+  const selection = report ? await inspect(tabId, origin, selectionAction, selector) : null;
+  if (action === 'select') {
+    if (!selection?.element) throw new Error(selection?.error ?? 'The selected element is unavailable.');
+    await chrome.storage.session.set({ [elementKey(tabId)]: { selector, pathname: new URL(tab.url).pathname } });
+  }
+  if (selection?.element) report.element = selection.element;
+  return { origin, label: current.label, hasCustomRules: current.custom, report, selection, agentConnected: agentConnected(tabId) };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -118,6 +129,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (change.status !== 'complete' && !change.url) return;
+  disconnectAgent(tabId, tabOrigin(tab.url));
   inOrder(tabId, async () => {
     const key = sessionKey(tabId);
     const origin = (await chrome.storage.session.get(key))[key];
@@ -143,5 +155,6 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  disconnectAgent(tabId);
   inOrder(tabId, () => chrome.storage.session.remove([sessionKey(tabId), elementKey(tabId)])).catch(console.error);
 });

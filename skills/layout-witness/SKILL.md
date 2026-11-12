@@ -8,22 +8,29 @@ license: MIT
 
 Make the page easier to scan and use. Give related elements a clear grouping, keep repeated components consistent, and preserve those relationships as content and viewport size change. Use the guides to decide what to fix while you edit.
 
-Use the Chrome extension first when the page is already open in a logged-in browser tab. It inspects the current page without signing in again or opening a separate browser. Load the extension directly in Chrome. Use the optional Playwright CLI for unattended captures in fresh browser contexts.
+Use the Chrome extension on the existing development tab. Pair its local agent connection to control guides and read page and element measurements as JSON in the terminal. Use the optional Playwright CLI for unattended captures in fresh browser contexts.
 
-## Inspect an existing tab
+## Connect to the existing tab
 
-Load the unpacked extension from the complete installed skill folder:
+Load the complete `layout-witness` skill directory as an unpacked extension from `chrome://extensions`. Use Chrome 116 or later.
 
-1. Open `chrome://extensions` and enable Developer mode.
-2. Select **Load unpacked**, then choose the entire `layout-witness` skill directory. Its root contains `manifest.json`.
-3. Open the target page in Chrome and select Layout Witness from the toolbar.
-4. Choose **Start guides** to add guides to the active HTTP(S) tab. To load project-specific checks, open **Layout rules** and choose **Import rules** with a file in the [rules format](references/rules.md).
-5. Use **Inspect element** to select a specific part of the page. Click it or press Enter while it is focused. Reopen the popup to read its dimensions, spacing, typography, and SVG geometry when present. **Download report** saves this selection with the page measurements.
-6. Choose **Stop guides** to remove the overlay.
+1. Set `WITNESS_DIR` to the installed skill directory. Run `(cd "$WITNESS_DIR" && npm ci --omit=dev)` once, then start `node "$WITNESS_DIR/scripts/agent.mjs" serve` in a persistent terminal.
+2. Open Layout Witness from the toolbar on the development tab. Under **Agent access**, paste the pairing URL printed by the terminal and choose **Connect agent**. This authorizes the one tab. If access is missing, ask the user to pair that tab once.
+3. Use the CLI from any terminal on the same machine. Keep the local server running during edits.
 
-Keep guides on during edits. The selected element shows live size, spacing, text and SVG guides directly on the page. Grid tracks and gaps appear when the selected layout can be measured. A baseline appears when a single text line can be measured without moving it. Reopen the popup for the complete report.
+```sh
+node "$WITNESS_DIR/scripts/agent.mjs" start
+node "$WITNESS_DIR/scripts/agent.mjs" select 'header [aria-label="Search"]'
+node "$WITNESS_DIR/scripts/agent.mjs" measure
+# Edit the project's CSS and wait for the dev server to apply it.
+node "$WITNESS_DIR/scripts/agent.mjs" measure
+```
 
-The extension restores page guides on same-origin reloads while Chrome retains access. The selected element follows scroll, resize, and CSS edits and can be restored on the same route when its selector still resolves. Activate guides again after moving to another origin. Rules and measurements stay in the browser until you export a report.
+`measure` prints page regions, check results and the currently selected element when available. That element can include its rendered box, margin, border, padding, grid and gap values, typography (including viewport baseline Y when measurable), and SVG geometry. Use a selector that matches one visible element. Keep the selection while editing and read its JSON again after the browser applies the change.
+
+Use `status` to check the connection, `clear` to remove only the element guide, `pick` for manual click selection, `import <rules.json>` to load [project rules](references/rules.md), and `defaults` to restore default rules. Use `stop` to remove both guides and clear the selection for clean review. Use `start` and `select` to resume. Use `disconnect` when done if the tab should stop accepting commands. Same-origin reloads can restore guides and a selection on the same route. A different origin or tab closure ends the pairing.
+
+For manual review, use **Start guides**, **Inspect element**, and **Stop guides** in the toolbar popup. **Download report** is available when you want to save a copy.
 
 ## Work with the guides on
 

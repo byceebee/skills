@@ -1,13 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Layout Witness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keep layout guides on the active tab and check its rendered geometry.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:*;"
+  },
   "action": {
     "default_title": "Layout Witness",
     "default_popup": "extension/popup.html",
@@ -26,5 +29,5 @@
     "48": "extension/icons/48.png",
     "128": "extension/icons/128.png"
   },
-  "minimum_chrome_version": "102"
+  "minimum_chrome_version": "116"
 }

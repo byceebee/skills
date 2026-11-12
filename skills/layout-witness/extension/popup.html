@@ -69,6 +69,17 @@
       </div>
       <input id="rules-file" type="file" accept=".json,application/json" hidden>
     </details>
+    <details id="agent-settings" class="rules">
+      <summary><span class="rules-label">Agent access <span id="agent-status">Disconnected</span></span></summary>
+      <form id="agent-pair" class="agent-form">
+        <label for="pairing-url">Pairing URL</label>
+        <input id="pairing-url" type="password" placeholder="Paste from the terminal" autocomplete="off" required>
+        <button id="connect-agent" disabled>Connect agent</button>
+      </form>
+      <div id="agent-connected" class="actions" hidden>
+        <button id="disconnect-agent" disabled>Disconnect agent</button>
+      </div>
+    </details>
     <footer>A product by <a href="https://ceebee.biz.id" target="_blank" rel="noopener noreferrer">byceebee</a></footer>
   </main>
   <script type="module" src="popup.mjs"></script>

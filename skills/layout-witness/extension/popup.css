@@ -125,7 +125,16 @@ summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .rules { border-block-start: 1px solid var(--line); margin-block-start: 14px; padding-block-start: 12px; }
 .rules summary { color: var(--ink); }
 .rules-label { display: inline-flex; width: calc(100% - 16px); justify-content: space-between; align-items: baseline; gap: 12px; }
-#rule-name { text-align: end; font-size: 12px; min-width: 0; }
+#rule-name, #agent-status { text-align: end; font-size: 12px; min-width: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+#agent-status { color: var(--muted); }
+#agent-status[data-connected] { color: var(--guide); }
+.agent-form { display: grid; gap: 7px; margin-block-start: 10px; }
+.agent-form label { color: var(--muted); font-size: 12px; }
+.agent-form input {
+  width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px;
+}
+.agent-form input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 footer { margin-block-start: 13px; color: var(--muted); font-size: 11px; }
 footer a { color: var(--ink); text-underline-offset: 2px; }

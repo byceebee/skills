@@ -1,10 +1,14 @@
 {
   "name": "layout-witness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=22" },
-  "scripts": { "test": "node --test test/*.test.mjs" },
-  "dependencies": { "playwright": "1.62.1" }
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:agent": "node --test test/agent.test.mjs"
+  },
+  "dependencies": { "ws": "8.22.2" },
+  "devDependencies": { "playwright": "1.62.1" }
 }

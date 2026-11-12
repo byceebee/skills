@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright';
 
 const skillDirectory = fileURLToPath(new URL('../', import.meta.url));
@@ -164,5 +168,92 @@ test('inspects the existing tab and restores its guides only on the same origin'
   } finally {
     await context?.close();
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('agent controls the granted tab and measures an existing selection without downloading', { timeout: 30000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'layout-witness-browser-'));
+  const script = join(skillDirectory, 'scripts/agent.mjs');
+  const env = { ...process.env, LAYOUT_WITNESS_SESSION: join(directory, 'session.json') };
+  const broker = spawn(process.execPath, [script, 'serve'], { env, stdio: ['ignore', 'pipe', 'inherit'] });
+  const run = promisify(execFile);
+  const command = async (...args) => JSON.parse((await run(process.execPath, [script, ...args], { env })).stdout);
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' }).end(
+      '<!doctype html><header>Example</header><main><button id="item" style="padding: 8px">Open</button><button>Close</button></main>',
+    );
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+
+  let context;
+  try {
+    let output = '';
+    let pairing;
+    for await (const chunk of broker.stdout) {
+      output += chunk;
+      pairing = output.match(/ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{64}/)?.[0];
+      if (pairing) break;
+    }
+    assert.ok(pairing);
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    context = await chromium.launchPersistentContext('', {
+      channel: 'chromium',
+      acceptDownloads: false,
+      args: [`--disable-extensions-except=${skillDirectory}`, `--load-extension=${skillDirectory}`],
+    });
+    const page = context.pages()[0];
+    await page.goto(url);
+    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const extension = new URL(worker.url());
+    const cdp = await context.browser().newBrowserCDPSession();
+    const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab' }] });
+    const { targetId } = targetInfos.find(target => target.url === url);
+    await cdp.send('Extensions.triggerAction', { id: extension.host, targetId });
+    const popup = await context.newPage();
+    let downloads = 0;
+    for (const tab of [page, popup]) tab.on('download', () => downloads++);
+    await page.bringToFront();
+    await popup.goto(new URL('/extension/popup.html', extension).href);
+    await popup.getByText('Agent access').click();
+    await popup.getByLabel('Pairing URL').fill(pairing);
+    await popup.getByRole('button', { name: 'Connect agent', exact: true }).click();
+    await popup.getByText('Connected to this tab', { exact: true }).waitFor();
+    await popup.close();
+
+    assert.equal((await command('status')).report, null);
+    await command('start');
+    const before = (await command('select', '#item')).report;
+    assert.equal(before.element.padding.left, '8px');
+    await assert.rejects(command('select', 'button'), /exactly one visible element/);
+    await assert.rejects(command('select', '['), /valid CSS selector/);
+    await page.evaluate(() => { window.witnessGuide = document.querySelector('[data-layout-witness-element]'); });
+    await page.addStyleTag({ content: '#item { padding-left: 12px !important; }' });
+    const after = await command('measure');
+    assert.equal(after.element.selector, before.element.selector);
+    assert.equal(after.element.padding.left, '12px');
+    assert.equal(await page.evaluate(() => window.witnessGuide === document.querySelector('[data-layout-witness-element]')), true);
+
+    await command('clear');
+    assert.equal((await command('measure')).element, undefined);
+    await command('stop');
+    await page.locator(overlay).waitFor({ state: 'detached' });
+    await assert.rejects(command('measure'), /guides are off/);
+    await command('start');
+    await command('select', '#item');
+    await page.reload();
+    await page.locator('[data-layout-witness-element]').waitFor();
+    assert.equal((await command('measure')).element.selector, '#item');
+    await page.goto(url.replace('127.0.0.1', 'localhost'));
+    await assert.rejects(command('status'), /pair/i);
+    assert.equal(downloads, 0);
+  } finally {
+    await context?.close();
+    if (broker.exitCode === null) {
+      const exited = once(broker, 'exit');
+      broker.kill('SIGTERM');
+      await exited;
+    }
+    await new Promise(resolve => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
   }
 });

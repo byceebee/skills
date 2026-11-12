@@ -8,7 +8,24 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     return { picking: false, element: null };
   }
   if (action === 'restore' && current) return current.snapshot();
-  if (action !== 'pick' && action !== 'restore') throw new Error('Unknown element inspection action.');
+  if (!['pick', 'restore', 'select'].includes(action)) throw new Error('Unknown element inspection action.');
+  function visibleMatches(selector) {
+    return [...document.querySelectorAll(selector)].filter(node =>
+      node.getClientRects().length && getComputedStyle(node).visibility === 'visible');
+  }
+
+  let requested;
+  if (action === 'select') {
+    if (typeof restoreSelector !== 'string' || !restoreSelector.trim()) return { error: 'Provide a CSS selector.' };
+    let matches;
+    try {
+      matches = visibleMatches(restoreSelector);
+    } catch {
+      return { error: 'Provide a valid CSS selector.' };
+    }
+    if (matches.length !== 1) return { error: `The selector must match exactly one visible element. Found ${matches.length}.` };
+    [requested] = matches;
+  }
   current?.stop();
 
   const host = document.createElement('div');
@@ -40,8 +57,9 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   let picking = action === 'pick';
   let selector = restoreSelector;
   const pathname = location.pathname;
-  let selected;
+  let selected = requested;
   let hovered;
+  let baselineY = null;
   let frame;
   let interval;
   const baselineCache = new WeakMap();
@@ -63,6 +81,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   }
 
   function paintGuides(node) {
+    baselineY = null;
     const scale = devicePixelRatio || 1;
     const width = Math.ceil(innerWidth * scale);
     const height = Math.ceil(innerHeight * scale);
@@ -257,6 +276,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
             textStyle = css;
             const baseline = measureBaseline(text, css, range, box);
             if (baseline !== null) {
+              baselineY = round(baseline);
               line(box.left, baseline, box.right, baseline, colors.type);
               label('Baseline', box.left - 38, baseline, colors.type, [box.left, baseline]);
             }
@@ -367,7 +387,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
       return;
     }
     if (!selected?.isConnected) {
-      const matches = document.querySelectorAll(selector);
+      const matches = visibleMatches(selector);
       selected = matches.length === 1 ? matches[0] : null;
     }
     draw(selected);
@@ -424,6 +444,11 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
 
   function snapshot() {
     if (picking) return { picking: true, element: null };
+    if (pathname !== location.pathname) {
+      stop();
+      return { picking: false, element: null };
+    }
+    refresh();
     if (!selected?.isConnected) return { picking: false, element: null };
     const style = getComputedStyle(selected);
     const sides = ['Top', 'Right', 'Bottom', 'Left'];
@@ -446,14 +471,14 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
         },
         typography: {
           fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight,
-          lineHeight: style.lineHeight, letterSpacing: style.letterSpacing,
+          lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, baselineY,
         },
         svg: svgGeometry(selected),
       },
     };
   }
 
-  if (action === 'restore') {
+  if (action === 'restore' || action === 'select') {
     globalThis[key] = { snapshot, stop };
     refresh();
     followLayout();
