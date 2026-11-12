@@ -43,7 +43,8 @@ async function inject(tabId, func, parameters) {
 }
 
 const run = (tabId, origin, action, config) => inject(tabId, inspectPage, { action, origin, config });
-const inspect = (tabId, origin, action) => inject(tabId, inspectElement, { action, origin });
+const inspect = (tabId, origin, action, selector) => inject(tabId, inspectElement, { action, origin, selector });
+const elementKey = (tabId) => `element:${tabId}`;
 
 const operations = new Map();
 function inOrder(tabId, operation) {
@@ -80,13 +81,14 @@ async function handleMessage({ action, tabId, rules, label }) {
   } else if (action === 'start') {
     report = await activate(tabId, origin, current.config);
   } else if (action === 'stop') {
-    await chrome.storage.session.remove(key);
+    await chrome.storage.session.remove([key, elementKey(tabId)]);
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
   } else if (['status', 'pick', 'clear'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config) ?? await activate(tabId, origin, current.config);
   }
 
+  if (action === 'clear' || action === 'pick') await chrome.storage.session.remove(elementKey(tabId));
   const selection = report
     ? await inspect(tabId, origin, action === 'pick' || action === 'clear' ? action : 'status')
     : null;
@@ -95,6 +97,17 @@ async function handleMessage({ action, tabId, rules, label }) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message.type === 'element-selected' && sender.frameId === 0 && sender.tab?.id !== undefined) {
+    const tabId = sender.tab.id;
+    inOrder(tabId, async () => {
+      const key = sessionKey(tabId);
+      const origin = (await chrome.storage.session.get(key))[key];
+      if (origin && tabOrigin(sender.url) === origin) {
+        await chrome.storage.session.set({ [elementKey(tabId)]: { selector: message.selector, pathname: message.pathname } });
+      }
+    }).catch(console.error);
+    return false;
+  }
   if (sender.url !== chrome.runtime.getURL('extension/popup.html')) return false;
   inOrder(message.tabId, () => handleMessage(message)).then(
     (value) => respond({ value }),
@@ -110,20 +123,25 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     const origin = (await chrome.storage.session.get(key))[key];
     if (!origin) return;
     if (tabOrigin(tab.url) !== origin) {
-      await chrome.storage.session.remove(key);
+      await chrome.storage.session.remove([key, elementKey(tabId)]);
       return;
     }
     if (change.status !== 'complete') return;
     const { config } = await settings(origin);
     try {
       if (!await run(tabId, origin, 'status', config)) await activate(tabId, origin, config);
+      const selectionKey = elementKey(tabId);
+      const selection = (await chrome.storage.session.get(selectionKey))[selectionKey];
+      if (selection?.pathname === new URL(tab.url).pathname) {
+        await inspect(tabId, origin, 'restore', selection.selector);
+      } else if (selection) await chrome.storage.session.remove(selectionKey);
     } catch {
       // A subsequent navigation or a revoked grant can invalidate this tab.
-      await chrome.storage.session.remove(key);
+      await chrome.storage.session.remove([key, elementKey(tabId)]);
     }
   }).catch(console.error);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  inOrder(tabId, () => chrome.storage.session.remove(sessionKey(tabId))).catch(console.error);
+  inOrder(tabId, () => chrome.storage.session.remove([sessionKey(tabId), elementKey(tabId)])).catch(console.error);
 });

@@ -104,6 +104,7 @@ test('inspects the existing tab and restores its guides only on the same origin'
     assert.equal(atomic.svg.rendered.width, 16);
     assert.deepEqual(atomic.svg.strokeWidths, ['2px']);
     if (screenshots) {
+      await page.screenshot({ path: join(screenshots, 'atomic-button.png') });
       await popup.emulateMedia({ colorScheme: 'dark' });
       await popup.locator('main').screenshot({ path: join(screenshots, 'popup-element.png') });
       await popup.getByRole('button', { name: 'SVG', exact: true }).click();
@@ -119,9 +120,22 @@ test('inspects the existing tab and restores its guides only on the same origin'
     if (popup.isClosed()) popup = await openPopupDocument();
     await popup.getByText('#fixture-action', { exact: true }).waitFor();
     assert.equal((await downloadReport(popup)).element.selector, '#fixture-action');
+    await fixtureAction.evaluate(button => { button.style.paddingLeft = '16px'; });
+    assert.equal((await downloadReport(popup)).element.padding.left, '16px');
+
+    await popup.getByRole('button', { name: 'Inspect element' }).click();
+    await page.locator('[data-layout-witness-element]').waitFor();
+    await page.locator('.page-heading').click();
+    if (popup.isClosed()) popup = await openPopupDocument();
+    await popup.getByText('Selected element').waitFor();
+    const heading = (await downloadReport(popup)).element;
+    assert.equal(heading.tag, 'h1');
+    if (screenshots) await page.screenshot({ path: join(screenshots, 'atomic-heading.png') });
 
     await changedStyle.evaluate((style) => style.remove());
-    assert.equal(check(await downloadReport(popup)).status, 'pass');
+    const restored = await downloadReport(popup);
+    assert.equal(check(restored).status, 'pass');
+    assert.equal(restored.element.selector, heading.selector);
     await page.reload();
     await page.locator(overlay).waitFor();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('fixture-session')), 'existing');

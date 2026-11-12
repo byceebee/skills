@@ -19,7 +19,9 @@ Load the unpacked extension from the complete installed skill folder:
 5. Use **Inspect element** to select a specific part of the page. Click it or press Enter while it is focused. Reopen the popup to read its dimensions, spacing, typography, and SVG geometry when present. **Download report** saves this selection with the page measurements.
 6. Choose **Stop guides** to remove the overlay.
 
-The extension restores the guides on same-origin reloads while Chrome retains access. Activate it again after moving to another origin. Rules and measurements stay in the browser until you export a report.
+Keep guides on during edits. The selected element shows live size, spacing, text and SVG guides directly on the page. Grid tracks and gaps appear when the selected layout can be measured. A baseline appears when a single text line can be measured without moving it. Reopen the popup for the complete report.
+
+The extension restores page guides on same-origin reloads while Chrome retains access. The selected element follows scroll, resize, and CSS edits and can be restored on the same route when its selector still resolves. Activate guides again after moving to another origin. Rules and measurements stay in the browser until you export a report.
 
 Read the downloaded report before editing. If you need the path, ask the user or locate the report in Chrome's Downloads folder. Compare the measured and expected values, make the targeted edit, then use a new report from the same tab to verify the correction. Inspect the rendered page as well for wrapping, hierarchy, and visible controls.
 
