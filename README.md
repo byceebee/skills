@@ -6,19 +6,31 @@ Agent skills from [byceebee](https://ceebee.biz.id).
 | --- | --- |
 | [Layout Witness](skills/layout-witness/SKILL.md) | Keep layout guides on a running page and turn browser measurements into evidence a coding agent can act on. |
 
-## Install Layout Witness
+## Inspect an existing browser tab
+
+Clone this repository or [download the ZIP](https://github.com/byceebee/skills/archive/refs/heads/main.zip). Load its `skills/layout-witness` directory as an unpacked extension in Chrome.
+
+1. Open `chrome://extensions` and enable Developer mode.
+2. Choose **Load unpacked** and select the `skills/layout-witness` directory. It contains the extension manifest.
+3. Open the page you want to inspect, then open Layout Witness from the toolbar.
+
+Choose **Start guides** to show guides on the active HTTP(S) tab. The default is guides only. To use project rules, choose **Import rules** in the popup and select a rules file in the same format as the [rules reference](skills/layout-witness/references/rules.md). Choose **Stop guides** to remove the guide from the page. Use the popup's report summary to review measurements, or choose **Download report** to save `layout-witness.json`.
+
+Chrome can restore the guide after a reload while it retains extension access to that page on the same origin. After navigating to another origin, activate the extension again from the toolbar. Imported rules are stored separately for each origin. Inspection and rule storage run locally in Chrome.
+
+Give your agent the downloaded report’s path. It can compare the measured values with the project rules and check a second report after editing.
+
+## Install the agent skill
 
 ```sh
 npx skills add byceebee/skills --skill layout-witness
 ```
 
-You can also copy the entire `skills/layout-witness` directory into your agent's skills folder. Set up Node.js and Chromium using the [skill instructions](skills/layout-witness/SKILL.md).
+You can also copy the entire `skills/layout-witness` directory into your agent's skills folder. Follow the [skill instructions](skills/layout-witness/SKILL.md) for browser and optional CLI setup.
 
-## Use it on your dev server
+## Optional unattended captures
 
-Run your app as usual and point Layout Witness at its local URL. The skill runs the inspector from its own directory, so your app can use its existing dev server and dependencies.
-
-The current CLI opens a separate Chromium window for live inspection and uses Playwright for automated captures. Install its dependencies and Chromium once in the skill directory.
+The CLI remains available for scripted capture runs that need a fresh browser context and Playwright. This path is optional; the extension does not need npm, Node.js, or Playwright.
 
 <details>
 <summary>Try the included demo</summary>

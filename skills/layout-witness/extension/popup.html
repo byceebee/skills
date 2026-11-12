@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout Witness</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/48.png" alt="" width="36" height="36">
+      <div>
+        <h1>Layout Witness</h1>
+        <p id="origin">Opening current tab…</p>
+      </div>
+    </header>
+
+    <button id="toggle" class="primary" disabled>Start guides</button>
+    <p id="message" role="status"></p>
+
+    <section id="results" aria-labelledby="results-heading" hidden>
+      <div class="map-panel">
+        <div class="map-heading">
+          <h2 id="results-heading">Live layout</h2>
+          <p id="viewport"></p>
+        </div>
+        <div id="map" aria-hidden="true"></div>
+      </div>
+      <p id="summary" aria-live="polite"></p>
+      <ul id="findings"></ul>
+      <button id="download">Download report</button>
+    </section>
+
+    <section class="rules" aria-labelledby="rules-heading">
+      <div class="rules-label">
+        <h2 id="rules-heading">Layout rules</h2>
+        <p id="rule-name">Default guides</p>
+      </div>
+      <div class="actions">
+        <button id="import" disabled>Import rules</button>
+        <button id="reset" hidden>Use defaults</button>
+      </div>
+      <input id="rules-file" type="file" accept=".json,application/json" hidden>
+    </section>
+  </main>
+  <script type="module" src="popup.mjs"></script>
+</body>
+</html>

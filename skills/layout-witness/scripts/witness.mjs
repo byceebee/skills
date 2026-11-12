@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
-import { paintPage, samplePage } from './measure.mjs';
+import { inspectPage } from './measure.mjs';
 import { parseRules } from './rules.mjs';
 
 const help = `Layout Witness
@@ -25,7 +25,7 @@ async function openPage(page, url, ready) {
 }
 
 async function sample(page, config) {
-  return page.evaluate(samplePage, config);
+  return page.evaluate(inspectPage, { action: 'sample', config });
 }
 
 async function watch(browser, settings) {
@@ -46,7 +46,7 @@ async function watch(browser, settings) {
         const signature = JSON.stringify(report);
         const missingOverlay = await page.locator('[data-layout-witness]').count() === 0;
         if (signature !== lastSignature || missingOverlay) {
-          await page.evaluate(paintPage, report);
+          await page.evaluate(inspectPage, { action: 'paint', report });
           const nextImage = join(directory, 'overlay.next.png');
           await page.screenshot({ path: nextImage });
           await rename(nextImage, join(directory, 'overlay.png'));
@@ -77,7 +77,7 @@ async function capture(browser, settings) {
       await openPage(page, settings.url, settings.ready);
       await page.screenshot({ path: join(directory, 'clean.png'), animations: 'disabled' });
       const report = await sample(page, settings.config);
-      await page.evaluate(paintPage, report);
+      await page.evaluate(inspectPage, { action: 'paint', report });
       await page.screenshot({ path: join(directory, 'overlay.png'), animations: 'disabled' });
       await saveJson(join(directory, 'layout.json'), report);
       const counts = { pass: 0, fail: 0, unavailable: 0 };
