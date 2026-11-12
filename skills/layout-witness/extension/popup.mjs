@@ -1,5 +1,7 @@
 const select = (id) => document.getElementById(id);
 const toggle = select('toggle');
+const pick = select('pick');
+const clear = select('clear');
 const importButton = select('import');
 const reset = select('reset');
 const fileInput = select('rules-file');
@@ -9,6 +11,10 @@ const message = select('message');
 let tabId;
 let state;
 let busy = false;
+let view = 'page';
+let metrics = 'box';
+let lastSelector;
+let lastElementSignature;
 
 function status(text = '', error = false) {
   message.textContent = text;
@@ -48,13 +54,97 @@ function drawMap(report) {
   );
 }
 
+function chooseView(next) {
+  view = next;
+  for (const name of ['page', 'element']) {
+    select(`${name}-view`).setAttribute('aria-pressed', String(name === view));
+    select(`${name}-report`).hidden = name !== view;
+  }
+}
+
+function properties(id, entries) {
+  const nodes = entries.flatMap(([label, value]) => {
+    const name = document.createElement('dt');
+    const detail = document.createElement('dd');
+    name.textContent = label;
+    detail.textContent = value;
+    return [name, detail];
+  });
+  select(id).replaceChildren(...nodes);
+}
+
+function chooseMetrics(next) {
+  metrics = next;
+  for (const name of ['box', 'style', 'svg']) {
+    select(`${name}-metrics`).setAttribute('aria-pressed', String(name === metrics));
+    select(`${name}-details`).hidden = name !== metrics;
+  }
+}
+
+function drawElement(element) {
+  if (select('selector').textContent !== element.selector) select('selector').textContent = element.selector;
+  properties('element-box', [
+    ['Rendered size', `${element.box.width} × ${element.box.height} px`],
+    ['Viewport position', `${element.box.x}, ${element.box.y} px`],
+  ]);
+  const spacing = ['margin', 'border', 'padding'].map((metric) => {
+    const row = document.createElement('tr');
+    const name = document.createElement('th');
+    name.scope = 'row';
+    name.textContent = metric[0].toUpperCase() + metric.slice(1);
+    row.append(name);
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      const cell = document.createElement('td');
+      cell.textContent = element[metric][side] || '—';
+      row.append(cell);
+    }
+    return row;
+  });
+  select('element-spacing').replaceChildren(...spacing);
+  const { typography, layout } = element;
+  properties('element-style', [
+    ['Font family', typography.fontFamily], ['Font size', typography.fontSize],
+    ['Font weight', typography.fontWeight], ['Line height', typography.lineHeight],
+    ['Letter spacing', typography.letterSpacing], ['Display', layout.display],
+    ['Box sizing', layout.boxSizing], ['Row gap', layout.rowGap], ['Column gap', layout.columnGap],
+    ['Grid columns', layout.columns], ['Grid rows', layout.rows],
+  ].filter(([, value]) => value));
+
+  const svg = element.svg;
+  select('svg-metrics').hidden = !svg;
+  if (!svg && metrics === 'svg') chooseMetrics('box');
+  if (svg) {
+    const bounds = ({ x, y, width, height }) => `${x}, ${y} · ${width} × ${height}`;
+    properties('element-svg', [
+      ['Rendered size', `${svg.rendered.width} × ${svg.rendered.height} px`],
+      ['ViewBox', svg.viewBox ? bounds(svg.viewBox) : '—'],
+      ['Artwork bounds', svg.artwork ? bounds(svg.artwork) : '—'],
+      ['Stroke widths', svg.strokeWidths.join(', ') || '—'],
+    ]);
+  }
+}
+
 function draw(state) {
   select('origin').textContent = state.origin;
   select('rule-name').textContent = state.label;
   reset.hidden = !state.hasCustomRules;
   toggle.textContent = state.report ? 'Stop guides' : 'Start guides';
-  toggle.toggleAttribute('data-running', Boolean(state.report));
+  const running = Boolean(state.report);
+  if (toggle.hasAttribute('data-running') !== running) select('rule-settings').open = !running;
+  toggle.toggleAttribute('data-running', running);
+  pick.hidden = !state.report;
+  pick.textContent = state.selection?.picking ? 'Cancel selection' : 'Inspect element';
   select('results').hidden = !state.report;
+  const element = state.report?.element;
+  select('switcher').hidden = !element;
+  if (element?.selector !== lastSelector) {
+    chooseView(element ? 'element' : 'page');
+    chooseMetrics('box');
+  }
+  lastSelector = element?.selector;
+  const signature = element && JSON.stringify(element);
+  if (element && signature !== lastElementSignature) drawElement(element);
+  lastElementSignature = signature;
   if (!state.report) return;
 
   drawMap(state.report);
@@ -84,7 +174,7 @@ async function act(operation) {
   if (busy) return;
   busy = true;
   status();
-  for (const button of [toggle, importButton, reset, download]) button.disabled = true;
+  for (const button of [toggle, pick, clear, importButton, reset, download]) button.disabled = true;
   try {
     await operation();
     draw(state);
@@ -93,13 +183,24 @@ async function act(operation) {
     status(error.message, true);
   } finally {
     busy = false;
-    for (const button of [toggle, importButton, reset, download]) button.disabled = !state;
+    for (const button of [toggle, pick, clear, importButton, reset, download]) button.disabled = !state;
   }
 }
 
 toggle.addEventListener('click', () => act(async () => {
   state = await request(state.report ? 'stop' : 'start');
 }));
+pick.addEventListener('click', () => act(async () => {
+  const picking = state.selection?.picking;
+  state = await request(picking ? 'clear' : 'pick');
+  if (!picking) window.close();
+}));
+clear.addEventListener('click', () => act(async () => { state = await request('clear'); }));
+select('page-view').addEventListener('click', () => chooseView('page'));
+select('element-view').addEventListener('click', () => chooseView('element'));
+for (const name of ['box', 'style', 'svg']) {
+  select(`${name}-metrics`).addEventListener('click', () => chooseMetrics(name));
+}
 importButton.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
   const [file] = fileInput.files;

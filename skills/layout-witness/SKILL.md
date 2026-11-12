@@ -15,8 +15,8 @@ Load the unpacked extension from the complete installed skill folder:
 1. Open `chrome://extensions` and enable Developer mode.
 2. Select **Load unpacked**, then choose the entire `layout-witness` skill directory. Its root contains `manifest.json`.
 3. Open the target page in Chrome and select Layout Witness from the toolbar.
-4. Choose **Start guides** to add guides to the active HTTP(S) tab. The default has guides only. To load project-specific rules, select **Import rules** and choose a file in the [rules format](references/rules.md).
-5. Review the popup's report summary. Choose **Download report** to save `layout-witness.json` for a detailed comparison.
+4. Choose **Start guides** to add guides to the active HTTP(S) tab. To load project-specific checks, open **Layout rules** and choose **Import rules** with a file in the [rules format](references/rules.md).
+5. Use **Inspect element** to select a specific part of the page. Click it or press Enter while it is focused. Reopen the popup to read its dimensions, spacing, typography, and SVG geometry when present. **Download report** saves this selection with the page measurements.
 6. Choose **Stop guides** to remove the overlay.
 
 The extension restores the guides on same-origin reloads while Chrome retains access. Activate it again after moving to another origin. Rules and measurements stay in the browser until you export a report.

@@ -16,33 +16,60 @@
       </div>
     </header>
 
-    <button id="toggle" class="primary" disabled>Start guides</button>
+    <div class="toolbar">
+      <button id="toggle" class="primary" disabled>Start guides</button>
+      <button id="pick" hidden>Inspect element</button>
+    </div>
     <p id="message" role="status"></p>
 
-    <section id="results" aria-labelledby="results-heading" hidden>
-      <div class="map-panel">
-        <div class="map-heading">
-          <h2 id="results-heading">Live layout</h2>
-          <p id="viewport"></p>
-        </div>
-        <div id="map" aria-hidden="true"></div>
+    <section id="results" aria-label="Inspection results" hidden>
+      <div id="switcher" aria-label="Report view" hidden>
+        <button id="page-view" aria-controls="page-report" aria-pressed="true">Page</button>
+        <button id="element-view" aria-controls="element-report" aria-pressed="false">Element</button>
       </div>
-      <p id="summary" aria-live="polite"></p>
-      <ul id="findings"></ul>
+      <div id="page-report">
+        <div class="map-panel">
+          <div class="map-heading">
+            <h2>Live layout</h2>
+            <p id="viewport"></p>
+          </div>
+          <div id="map" aria-hidden="true"></div>
+        </div>
+        <p id="summary" aria-live="polite"></p>
+        <ul id="findings"></ul>
+      </div>
+      <div id="element-report" hidden>
+        <div class="element-heading">
+          <h2>Selected element</h2>
+          <button id="clear">Clear</button>
+          <code id="selector"></code>
+        </div>
+        <div class="metrics" aria-label="Element measurements">
+          <button id="box-metrics" aria-controls="box-details" aria-pressed="true">Box</button>
+          <button id="style-metrics" aria-controls="style-details" aria-pressed="false">Type &amp; layout</button>
+          <button id="svg-metrics" aria-controls="svg-details" aria-pressed="false" hidden>SVG</button>
+        </div>
+        <div id="box-details">
+          <dl id="element-box" class="properties"></dl>
+          <table aria-label="Box model in CSS pixels">
+            <thead><tr><th scope="col">Spacing</th><th scope="col">Top</th><th scope="col">Right</th><th scope="col">Bottom</th><th scope="col">Left</th></tr></thead>
+            <tbody id="element-spacing"></tbody>
+          </table>
+        </div>
+        <div id="style-details" hidden><dl id="element-style" class="properties"></dl></div>
+        <div id="svg-details" hidden><dl id="element-svg" class="properties"></dl></div>
+      </div>
       <button id="download">Download report</button>
     </section>
-
-    <section class="rules" aria-labelledby="rules-heading">
-      <div class="rules-label">
-        <h2 id="rules-heading">Layout rules</h2>
-        <p id="rule-name">Default guides</p>
-      </div>
+    <details id="rule-settings" class="rules" open>
+      <summary><span class="rules-label">Layout rules <span id="rule-name">Default guides</span></span></summary>
       <div class="actions">
         <button id="import" disabled>Import rules</button>
         <button id="reset" hidden>Use defaults</button>
       </div>
       <input id="rules-file" type="file" accept=".json,application/json" hidden>
-    </section>
+    </details>
+    <footer>A product by <a href="https://ceebee.biz.id" target="_blank" rel="noopener noreferrer">byceebee</a></footer>
   </main>
   <script type="module" src="popup.mjs"></script>
 </body>

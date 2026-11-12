@@ -1,5 +1,6 @@
 import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
+import { inspectElement } from './element.mjs';
 
 const guides = parseRules({
   regions: [
@@ -32,14 +33,17 @@ async function settings(origin) {
   return stored ?? { label: 'Default guides', config: guides, custom: false };
 }
 
-async function run(tabId, origin, action, config) {
+async function inject(tabId, func, parameters) {
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: inspectPage,
-    args: [{ action, origin, config }],
+    func,
+    args: [parameters],
   });
   return injection?.result ?? null;
 }
+
+const run = (tabId, origin, action, config) => inject(tabId, inspectPage, { action, origin, config });
+const inspect = (tabId, origin, action) => inject(tabId, inspectElement, { action, origin });
 
 const operations = new Map();
 function inOrder(tabId, operation) {
@@ -78,11 +82,16 @@ async function handleMessage({ action, tabId, rules, label }) {
   } else if (action === 'stop') {
     await chrome.storage.session.remove(key);
     await run(tabId, origin, 'stop');
-  } else if (action === 'status' && enabled) {
+    await inspect(tabId, origin, 'clear');
+  } else if (['status', 'pick', 'clear'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config) ?? await activate(tabId, origin, current.config);
   }
 
-  return { origin, label: current.label, hasCustomRules: current.custom, report };
+  const selection = report
+    ? await inspect(tabId, origin, action === 'pick' || action === 'clear' ? action : 'status')
+    : null;
+  if (report && selection.element) report.element = selection.element;
+  return { origin, label: current.label, hasCustomRules: current.custom, report, selection };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

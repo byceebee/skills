@@ -14,7 +14,9 @@ Clone this repository or [download the ZIP](https://github.com/byceebee/skills/a
 2. Choose **Load unpacked** and select the `skills/layout-witness` directory. It contains the extension manifest.
 3. Open the page you want to inspect, then open Layout Witness from the toolbar.
 
-Choose **Start guides** to show guides on the active HTTP(S) tab. The default is guides only. To use project rules, choose **Import rules** in the popup and select a rules file in the same format as the [rules reference](skills/layout-witness/references/rules.md). Choose **Stop guides** to remove the guide from the page. Use the popup's report summary to review measurements, or choose **Download report** to save `layout-witness.json`.
+Choose **Start guides** on the active HTTP(S) tab. For project-specific checks, open **Layout rules**, choose **Import rules**, and select a JSON file using the [rules reference](skills/layout-witness/references/rules.md).
+
+Choose **Inspect element** and pick a button, icon, or layout region. Click it, or focus it and press Enter. Reopen Layout Witness to see the rendered box, spacing, typography, grid tracks, and SVG measurements when available. **Download report** saves the page checks and selected element together as `layout-witness.json`.
 
 Chrome can restore the guide after a reload while it retains extension access to that page on the same origin. After navigating to another origin, activate the extension again from the toolbar. Imported rules are stored separately for each origin. Inspection and rule storage run locally in Chrome.
 
