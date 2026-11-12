@@ -41,20 +41,21 @@ For manual review, use **Start guides**, **Inspect element**, and **Stop guides*
 
 | Scope | What to inspect |
 | --- | --- |
-| Page shell | Header, sidebar or rail, main area, and footer. Check shared reading edges, outer gutters, nested column boundaries, and how each region moves or collapses at breakpoints. |
-| Groups and repeated components | Check row and column gaps, local grid tracks and spans, card insets, and alignment among peers. Give tightly related content less space between its parts than between separate groups. Verify the reading order when groups stack. |
-| Individual elements | Compare padding, borders, and gaps for controls with the same role and size. Inspect the line height and visible baseline of text that shares a row. Check icon box, visible shape, and stroke against peers, then judge optical balance at rendered size. Measure the interactive control separately from its glyph. |
+| Page shell | Use the page guides to check shared reading edges, outer gutters, and how the header, sidebar, main area, and footer adapt at breakpoints. In the clean render, check that recurring actions stay easy to find and the main task gets the most visual emphasis. |
+| Groups and repeated components | Use local grid tracks to check alignment and spans within a region. Compare the space between groups separately from the padding and gaps within each component. Keep related items visibly grouped and verify reading order when groups stack. |
+| Individual elements | Select the control to inspect its box, padding, and icon-to-label gap. Compare line height and baseline among labels meant to align. Review icon size and stroke within the same family, then judge optical balance at rendered size. Measure the interactive target separately from its glyph. |
 
-Example: a sidebar action has 8 px inline-start padding and 16 px inline-end padding. Its shared component specifies 16 px on both sides. Keep the action selected, restore its spacing token, and confirm the guides read 16 px on both sides. Then check the label and icon in the expanded and collapsed sidebar. Intentional asymmetry and optical adjustments can be valid. Use the component contract to decide.
+For a crowded sidebar, first check whether related links read as a group and adjacent sections have a clear gap. Then select a row and compare its inset and icon-to-label gap with equivalent rows. If the shared component calls for 16 px on each side and the guide reads 8 px on one side, restore the token and remeasure the same selection. Turn off the guide to check the expanded and collapsed sidebar in context.
 
-Use strict checks for explicit expectations such as token values, alignment between named edges, and overflow. Judge hierarchy and optical balance in the rendered page. When accessibility is in scope, check reflow, user text-spacing overrides, and actual pointer targets against the applicable WCAG criteria, including their exceptions.
+Use strict checks for explicit expectations such as token values, alignment between named edges, and overflow. Judge hierarchy and optical balance in the rendered page. Use the project's type scale to decide whether a baseline should align.
 
 ## Design references
 
-- Use a spacing scale to express relationships and hierarchy within and between groups. [IBM Carbon spacing](https://www.carbondesignsystem.com/building-blocks/foundations/spacing/overview)
-- Check the layout at the widths where regions reflow. Outer spacing can change by breakpoint while some component spacing stays fixed. [GOV.UK layout](https://design-system.service.gov.uk/styles/layout/) and [spacing](https://design-system.service.gov.uk/styles/spacing/)
-- Compare icon spacing and stroke within the project’s icon family at the rendered size. [Adobe Spectrum icon fundamentals](https://spectrum.adobe.com/page/iconography/)
-- Check content and controls under reflow, user text-spacing overrides, and minimum pointer-target requirements. [W3C reflow](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html), [text spacing](https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html), and [target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+- Adobe Spectrum 2 explains how proximity signals relationships, how spacing differs by scope, and how to review icon spacing and stroke within a family. [Spacing](https://spectrum.adobe.com/foundations/layout-and-structure/spacing/overview) · [Icon fundamentals](https://spectrum.adobe.com/page/iconography/)
+- Figma shows how to choose guides for the page, nested regions, component padding, and text baselines. [Layout grids](https://www.figma.com/best-practices/everything-you-need-to-know-about-layout-grids/)
+- Linear's design refresh is a case study in predictable header actions and visual hierarchy in a dense workspace. [Design refresh](https://linear.app/now/behind-the-latest-design-refresh)
+
+When accessibility is in scope, use WCAG to check reflow, user text-spacing overrides, and actual pointer targets, including applicable exceptions. [Reflow](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html) · [Text spacing](https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html) · [Target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
 
 ## Optional unattended captures
 
