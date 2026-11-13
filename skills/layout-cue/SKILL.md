@@ -8,7 +8,15 @@ license: MIT
 
 Make the page easier to scan and use. Give related elements a clear grouping, keep repeated components consistent, and preserve those relationships as content and viewport size change. Use the guides to decide what to fix while you edit.
 
-Use this skill with its bundled Chrome extension. When the user specifies their active Chrome, pair and capture the target tab in that session. The extension renders the page grid and the ruler for the selected element. The local agent controls the tab and returns its measurements as JSON.
+Use the bundled Chrome extension on the running page. When the user specifies their active Chrome, pair and capture that existing tab. The local agent reads live JSON and controls the guides through the CLI. Use the [capability map and state walkthrough](references/live-inspection.md) to choose the right guide, command, and evidence for the task.
+
+## Choose the scope of the guides
+
+- **Page** — Start with the shell, including header, sidebar, and main content. Read `viewport`, `regions`, `grids`, and `checks`. The default main-content guide uses 4, 8, or 12 columns. Use project rules when a region has its own intended guide.
+- **Composition** — Open the actual modal, drawer, or card state and select its container. Read `element.localGrids.grids` for detected CSS Grid tracks. For a stack or flex row, use the container's insets, shared edges, and gaps as the local reference.
+- **Atomic** — Select the specific control, label, icon, or hit target to move the ruler. Read `element` for the exact measurements. Compare related elements by measuring the same edge or gap in context.
+
+Keep the page guides running during edits. The element ruler and detected local grids follow one selection at a time, and the page guide can remain visible behind them. **Page** and **Element** in the popup switch the displayed report, while `clear` removes the selection and its local guides without stopping page checks. When a line or label is missing, verify the active state and selection in JSON before interpreting it as a layout issue. A clean render is a separate visual check.
 
 ## Connect to the existing tab
 
@@ -36,15 +44,13 @@ node "$WITNESS_DIR/scripts/agent.mjs" measure
 
 Use `navigate` for routes and URLs on the connected origin. It returns when navigation starts. Wait for the intended page or state to render and for its opening animation to finish before selecting and capturing. Use `click` to activate an unambiguous, visible control such as a dialog or drawer trigger. Confirm the intended state before taking evidence.
 
-Use `status` to check the connection, `clear` to remove only the element guide, `pick` for manual click selection, `import <rules.json>` to load [project rules](references/rules.md), and `defaults` to restore default rules. Use `stop` to remove both guides and clear the selection for clean review. Use `start` and `select` to resume. Use `disconnect` when done if the tab should stop accepting commands. Same-origin reloads can restore guides and a selection on the same route. A different origin or tab closure ends the pairing.
-
-Starting with no selector turns on both overlays and chooses an initial visible element. A selector supplied to `start` or `select` must match exactly one visible element. For manual review, **Start guides** turns on both overlays. Use **Inspect element** to move the ruler to the component you are checking, and **Stop guides** for the clean render. **Download report** saves the current measurements.
+Use `status` to confirm the pairing and guides. Use `measure` for live JSON without a download and `capture` for saved evidence. The [capability map](references/live-inspection.md#live-controls) lists the remaining controls and what they affect.
 
 ## Audit evidence
 
 For each page or interaction state in scope, bring the relevant UI into view and select the element you are judging. Use a separate selection when the question moves from the shell or group to an individual control, label, icon, or hit target. Run `capture <output.jpg>` while the paired tab is active. It saves the native screenshot and a measurement JSON with the same stem. It refuses capture when the ruler is missing, the element is offscreen, or the paired tab is in the background. Verify the intended selector in the JSON and the grid, ruler and relevant labels in the image. Replace the initial automatic selection with the actual element for each atomic finding.
 
-Run `stop` and then `capture-clean <output.jpg>` for the matching clean screenshot on the same tab and viewport. Link the ruler screenshot, clean screenshot, and measurement for each checked state in the coverage matrix. Replace captures that lack the intended native ruler. If a state cannot be reached, mark it pending and record why. Use unattended page-grid captures for discovery.
+Run `stop` and then `capture-clean <output.jpg>` for the matching clean screenshot on the same tab and viewport. Link the ruler screenshot, clean screenshot, and measurement for each checked state in the coverage matrix. Replace captures that lack the intended native ruler. If a state cannot be reached, mark it pending and record why. Label unattended screenshots with the capture mode used. They can support review, while native grid-and-ruler evidence requires the paired tab.
 
 ## Review how elements work together
 
