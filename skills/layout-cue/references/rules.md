@@ -18,6 +18,8 @@ Create a JSON file with `regions`, `checks`, or both. IDs are unique within each
 
 A region outlines its selector. Add `columns` to draw equal-width columns across the element's rendered box. `gap` is the space between columns and `inset` is the space on each side. Both default to zero. These guide lines represent the supplied plan. The screenshot remains a view of the original CSS.
 
+In the Chrome extension, a checks-only file keeps the default main-content grid of 4, 8, or 12 columns. A visible custom column region overrides the default grid within its configured width range. When no custom grid can be drawn, the extension uses the responsive default. The popup shows the column count and source.
+
 Each check resolves exactly one visible element. Narrow selectors when a component repeats. Add inclusive `minWidth` or `maxWidth` bounds to guides or checks that apply at specific viewport sizes. Rules outside the active width are omitted.
 
 | Metric | What is measured |

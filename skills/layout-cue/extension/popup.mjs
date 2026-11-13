@@ -158,6 +158,11 @@ function draw(state) {
   if (!state.report) return;
 
   drawMap(state.report);
+  const gridLabels = (state.report.grids ?? []).map(({ columns, source }) =>
+    `${columns} ${columns === 1 ? 'column' : 'columns'} · ${source === 'default' ? 'Default' : 'Custom'}`
+  );
+  const gridSummary = [...new Set(gridLabels)].join(' / ');
+  if (select('grid-summary').textContent !== gridSummary) select('grid-summary').textContent = gridSummary;
   const { checks, regions } = state.report;
   const count = (status) => checks.filter((check) => check.status === status).length;
   const regionsVisible = regions.filter((region) => region.status === 'available').length;

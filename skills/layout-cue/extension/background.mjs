@@ -14,6 +14,8 @@ const guides = parseRules({
   ],
 });
 
+const defaultSettings = { label: 'Default guides', config: { regions: [], checks: [] }, custom: false };
+
 function tabOrigin(url) {
   if (!url) return null;
   const parsed = new URL(url);
@@ -31,7 +33,7 @@ function ruleKey(origin) {
 async function settings(origin) {
   const key = ruleKey(origin);
   const stored = (await chrome.storage.local.get(key))[key];
-  return stored ?? { label: 'Default guides', config: guides, custom: false };
+  return stored ?? defaultSettings;
 }
 
 async function inject(tabId, func, parameters) {
@@ -43,7 +45,9 @@ async function inject(tabId, func, parameters) {
   return injection?.result ?? null;
 }
 
-const run = (tabId, origin, action, config) => inject(tabId, inspectPage, { action, origin, config });
+const run = (tabId, origin, action, config) => inject(tabId, inspectPage, {
+  action, origin, config: config && { ...config, defaultRegions: guides.regions },
+});
 const inspect = (tabId, origin, action, selector) => inject(tabId, inspectElement, { action, origin, selector });
 const elementKey = (tabId) => `element:${tabId}`;
 
@@ -127,7 +131,7 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
   if (action === 'import' || action === 'defaults') {
     current = action === 'import'
       ? { label: label.slice(0, 120), config: parseRules(rules), custom: true }
-      : { label: 'Default guides', config: guides, custom: false };
+      : defaultSettings;
     if (action === 'import') await chrome.storage.local.set({ [ruleKey(origin)]: current });
     else await chrome.storage.local.remove(ruleKey(origin));
     if (enabled) report = await activate(tabId, origin, current.config);
@@ -138,7 +142,8 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
   } else if (['status', 'capture', 'pick', 'select', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
-    report = await run(tabId, origin, 'status', current.config) ?? await activate(tabId, origin, current.config);
+    report = await run(tabId, origin, 'status', current.config);
+    if (!report?.grids) report = await activate(tabId, origin, current.config);
   }
 
   if (action === 'clear' || action === 'pick') await chrome.storage.session.remove(elementKey(tabId));
@@ -153,7 +158,7 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
   if (selection?.element) report.element = selection.element;
   if (action === 'capture') {
     if (!report?.element) throw new Error('Select an element with guides on before capturing.');
-    if (!report.regions.some(region => region.status === 'available' && region.columns > 0)) {
+    if (!report.grids.length) {
       throw new Error('The page grid is unavailable.');
     }
     const { x, y, width, height } = report.element.box;
@@ -210,7 +215,8 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     if (change.status !== 'complete' && tab.status !== 'complete') return;
     const { config } = await settings(origin);
     try {
-      if (!await run(tabId, origin, 'status', config)) await activate(tabId, origin, config);
+      const report = await run(tabId, origin, 'status', config);
+      if (!report?.grids) await activate(tabId, origin, config);
       const selectionKey = elementKey(tabId);
       const selection = (await chrome.storage.session.get(selectionKey))[selectionKey];
       if (selection?.pathname === new URL(tab.url).pathname) {

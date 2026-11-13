@@ -70,10 +70,11 @@ export function inspectPage({ action, config, report, origin }) {
 
     const inRange = (rule) => (rule.minWidth === undefined || viewport.width >= rule.minWidth) &&
       (rule.maxWidth === undefined || viewport.width <= rule.maxWidth);
-    const regions = config.regions.filter(inRange).map((rule) => {
+    const sampleRegions = (rules, source) => rules.filter(inRange).map((rule) => {
       const result = {
         id: rule.id,
         selector: rule.selector,
+        source,
         status: "unavailable",
       };
       const found = resolve(rule.selector);
@@ -88,6 +89,17 @@ export function inspectPage({ action, config, report, origin }) {
       }
       return result;
     });
+
+    const regions = sampleRegions(config.regions, "custom");
+    const hasGrid = (region) => region.status === "available" && region.columns > 0 &&
+      region.box.width > 2 * (region.inset ?? 0) + (region.columns - 1) * (region.gap ?? 0);
+    if (!regions.some(hasGrid) && config.defaultRegions) {
+      const defaults = sampleRegions(config.defaultRegions, "default");
+      regions.push(...defaults.filter((region) => {
+        if (regions.some((custom) => custom.id === region.id)) return false;
+        return region.columns > 0 || !regions.some((custom) => custom.selector === region.selector);
+      }));
+    }
 
     const checks = config.checks.filter(inRange).map((rule) => {
       const result = {
@@ -166,10 +178,10 @@ export function inspectPage({ action, config, report, origin }) {
       return result;
     });
 
-    if (!regions.some((region) => region.status === "available" && region.columns > 0)) {
+    if (!regions.some(hasGrid)) {
       const { width, height } = viewport;
       regions.push({
-        id: "viewport-grid", selector: "html", status: "available",
+        id: "viewport-grid", selector: "html", status: "available", source: "default",
         box: { left: 0, top: 0, right: width, bottom: height, width, height },
         columns: width >= 1024 ? 12 : width >= 640 ? 8 : 4, gap: width >= 640 ? 16 : 8,
       });
@@ -177,7 +189,8 @@ export function inspectPage({ action, config, report, origin }) {
     const explicitTheme = document.documentElement.dataset.theme;
     const theme = explicitTheme === 'dark' || explicitTheme === 'light'
       ? explicitTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    return { viewport, theme, regions, checks };
+    const grids = regions.filter(hasGrid).map(({ id, columns, source }) => ({ id, columns, source }));
+    return { viewport, theme, regions, checks, grids };
   }
 
   function paintPage(report) {

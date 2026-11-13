@@ -84,6 +84,7 @@ button:disabled { opacity: .62; cursor: default; }
   background-size: 12px 12px;
   overflow: hidden;
 }
+#grid-summary { margin-block-start: 8px; color: var(--muted); font-size: 11px; }
 #map span {
   position: absolute;
   border: 1px solid var(--guide);

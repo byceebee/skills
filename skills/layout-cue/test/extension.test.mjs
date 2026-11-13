@@ -64,6 +64,36 @@ test('inspects the existing tab and restores its guides only on the same origin'
     await popup.getByRole('button', { name: 'Start guides' }).click();
     await page.locator(overlay).waitFor();
     assert.match(await popup.locator('#summary').textContent(), /visible guides/);
+    await popup.getByText('12 columns · Default', { exact: true }).waitFor();
+
+    const gridRules = {
+      regions: [{ id: 'custom-desktop-grid', selector: 'main', columns: 10, minWidth: 1024 }],
+      checks: [{ id: 'page-overflow', selector: 'html', metric: 'horizontal-overflow', expected: 0 }],
+    };
+    async function importGridRules(rules) {
+      await popup.locator('#rules-file').setInputFiles({
+        name: 'responsive-grid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(rules)),
+      });
+    }
+    await importGridRules({ checks: gridRules.checks });
+    await popup.getByText('1 passed · 0 failed · 0 unavailable').waitFor();
+    assert.deepEqual((await downloadReport(popup)).grids, [{ id: 'main-wide', columns: 12, source: 'default' }]);
+
+    await importGridRules(gridRules);
+    await popup.getByText('10 columns · Custom', { exact: true }).waitFor();
+    for (const [width, columns] of [[1023, 8], [640, 8], [639, 4], [320, 4]]) {
+      await page.setViewportSize({ width, height: 844 });
+      const report = await downloadReport(popup);
+      assert.deepEqual(report.grids.map(({ columns, source }) => [columns, source]), [[columns, 'default']]);
+      assert.equal(report.checks[0].status, 'pass');
+    }
+    await popup.getByText('4 columns · Default', { exact: true }).waitFor();
+    const mobileScreenshots = process.env.LAYOUT_WITNESS_TEST_SCREENSHOTS;
+    if (mobileScreenshots) {
+      await page.screenshot({ path: join(mobileScreenshots, 'compact-default-grid.png') });
+      await popup.locator('main').screenshot({ path: join(mobileScreenshots, 'compact-default-popup.png') });
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     await popup.locator('#rules-file').setInputFiles(join(skillDirectory, 'examples/rules.json'));
     await popup.getByText('Rules saved for this site.').waitFor();
