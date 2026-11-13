@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
 
 const entry = fileURLToPath(new URL('../scripts/witness.mjs', import.meta.url));
@@ -24,8 +26,39 @@ function capture(url, directory, ...args) {
 
 test('validates responsive rule bounds and relative edge comparisons', () => {
   assert.throws(() => parseRules({ regions: [{ id: 'bad', selector: 'main', minWidth: 600, maxWidth: 300 }] }), /reversed/);
-  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'width', expected: 100, relativeTo: 'body' }] }), /box edge/);
+  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'width', expected: 100, relativeTo: 'body' }] }), /same axis/);
+  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'left', expected: 0, relativeTo: 'body', relativeEdge: 'top' }] }), /same axis/);
+  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'left', expected: 0, relativeEdge: 'right' }] }), /requires relativeTo/);
   assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'width', expected: 100, tolerence: 1 }] }), /Unknown field/);
+});
+
+test('compares distinct source and target edges with durable 28 fail / 12 pass evidence', { timeout: 20000 }, async () => {
+  const checks = [];
+  const nodes = [];
+  for (let index = 0; index < 40; index += 1) {
+    const x = index * 40;
+    const offset = index < 28 ? 8 : 0;
+    nodes.push(`<i id="from-${index}" style="left:${x}px"></i><i id="to-${index}" style="left:${x + offset}px"></i>`);
+    checks.push({ id: `edge-${index}`, selector: `#to-${index}`, metric: 'left', relativeTo: `#from-${index}`, expected: 0, tolerance: 1 });
+  }
+  checks.push({ id: 'center-from-right', selector: '#center-target', metric: 'center-x', relativeTo: '#center-source', relativeEdge: 'right', expected: 10, tolerance: 0 });
+  const parsed = parseRules({ checks });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1800, height: 300 } });
+    await page.setContent(`<style>i{position:absolute;top:20px;width:20px;height:20px}#center-source{left:0}#center-target{left:20px}</style>${nodes.join('')}<i id="center-source"></i><i id="center-target"></i>`);
+    const result = await page.evaluate(({ source, config }) => (0, eval)(`(${source})`)({ action: 'sample', config }), { source: inspectPage.toString(), config: parsed });
+    const comparisons = result.checks.filter(({ id }) => id.startsWith('edge-'));
+    assert.equal(comparisons.filter(({ status }) => status === 'fail').length, 28);
+    assert.equal(comparisons.filter(({ status }) => status === 'pass').length, 12);
+    assert.equal(comparisons[0].actual, 8);
+    assert.equal(comparisons[0].relativeTo, '#from-0');
+    assert.equal(comparisons[0].relativeEdge, 'left');
+    assert.equal(comparisons[0].tolerance, 1);
+    assert.equal(result.checks.find(({ id }) => id === 'center-from-right').actual, 10);
+  } finally {
+    await browser.close();
+  }
 });
 
 test('captures a real responsive page and fails strict review after a geometry regression', { timeout: 30000 }, async () => {

@@ -38,3 +38,42 @@ The popup also offers manual selection and report download. The agent can use li
 For an open edit drawer, use the shell view to check the drawer boundary and its relationship to the page. Select the drawer, then its form or footer. Scope selectors to the open panel in the rendered DOM, including when a portal places it outside the main region. Check their content insets, field grouping, and which region scrolls. Select one field, the primary action, and any icon control implicated in a finding. Apply the same approach to a modal or a card, using the state and peer components relevant to the brief.
 
 For each correction, state the expected relationship and its source, capture the starting measurement, edit the owning CSS or component with the guides on, and remeasure the same selector at the same viewport and state. Then check where the layout reflows. For example, a form that should have one column on mobile and two on desktop can use width-bounded `grid-column-count` checks. Verify keyboard focus and scroll reachability in the browser. Check the clean render for wrapping and order. Keep clean and ruler evidence from the same viewport, theme, state, and scroll position.
+
+## Compare rendered edges
+
+Use `compare` after `start` to pin a comparison in the current state. Choose `left`, `right`, `center-x`, `top`, `bottom`, or `center-y`. Both edges must use the same axis. Each selector must identify one visible element.
+
+```sh
+node "$WITNESS_DIR/scripts/agent.mjs" start
+node "$WITNESS_DIR/scripts/agent.mjs" click '#demo-edit-open'
+node "$WITNESS_DIR/scripts/agent.mjs" compare bottom top \
+  '#demo-edit-fields > label:nth-of-type(1)' \
+  '#demo-edit-fields > label:nth-of-type(2)' \
+  '#demo-edit-fields > label:nth-of-type(3)' --focus
+node "$WITNESS_DIR/scripts/agent.mjs" measure
+```
+
+For each adjacent pair, `comparison.measurements` reports the second edge coordinate minus the first in CSS pixels. In this example, the values are the actual vertical gaps between field groups. To check alignment, compare the same edge or center on both elements. To check an inset, select the container's edge and the child's corresponding edge in the order that gives the intended sign. A box center is geometric. Check icon artwork and text alignment visually.
+
+Pass two selectors for one ruler or up to six for repeated spacing. Supply selectors in the intended order and compare at each viewport where the group changes direction. `--focus` hides the page overlay while page measurements and checks keep running. The comparison draws only the selected relationships. JSON retains values whose ruler ends extend beyond the viewport and flags them with `drawn: false`. A missing or ambiguous target gives an unavailable value. Check clipping, occlusion, and legibility in the screenshot.
+
+Edit CSS with the comparison active and run `measure` again. `capture` saves the annotated screenshot and its comparison data. `stop` and `capture-clean` save a clean view. Use `select` to return to a single target or `clear` to return to page guides. After selecting an element, use `related parent`, `related child`, `related previous`, or `related next` to navigate nearby rendered DOM elements. `child` selects the first visible direct child.
+
+### Pick a pair in the page
+
+Start guides, then choose the gap direction and **Compare spacing** in the popup. Click the earlier element, hover the next element to preview, and click it to pin. For keyboard selection, focus each target and press Enter. Escape cancels. Choose the horizontal direction for controls in a row or vertical for elements in a stack.
+
+### Save a regression check
+
+With a comparison pinned, save its target and tolerance. A group produces a check for each adjacent pair. Existing checks on the site stay in place. Keep IDs unique and choose expected values from the project layout contract.
+
+```sh
+node "$WITNESS_DIR/scripts/agent.mjs" save-check edit-field-gap 12 1 320 360
+node "$WITNESS_DIR/scripts/agent.mjs" measure
+```
+
+The last two arguments scope this check to 320 through 360 CSS pixels. Once saved, the rule runs even after you clear the ruler or reload. The pinned ruler shows the result and target, and capture stores the same result in JSON. To share a check in a repository, add the equivalent `relativeEdge` rule to the project's rules file. Import replaces the rules for the current origin.
+
+### Check clipping
+
+Select the control and read `element.clipping`. It reports the visible box size, CSS pixels clipped on each side, and overflow containers that restrict the viewport. The overlay marks the boundary where it intersects the control. Scroll or focus the control and measure again to distinguish initially clipped content from an unreachable action. This is a rectangular geometry estimate for viewport and overflow clipping. Occlusion, masks, clip paths, and transformed geometry still need browser verification.

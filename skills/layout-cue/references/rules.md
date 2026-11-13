@@ -25,7 +25,7 @@ Each check resolves exactly one visible element. Narrow selectors when a compone
 | Metric | What is measured |
 | --- | --- |
 | `width`, `height` | Rendered border-box dimensions |
-| `left`, `right`, `top`, `bottom` | Viewport-relative box edge, or the difference from the same edge of `relativeTo` |
+| `left`, `right`, `top`, `bottom`, `center-x`, `center-y` | Viewport-relative box edge or center. With `relativeTo`, measures the selected edge against a source edge |
 | `padding-top`, `padding-right`, `padding-bottom`, `padding-left`, `row-gap`, `column-gap`, `line-height`, `font-size` | Computed pixel value |
 | `stroke-width` | Computed stroke width of the selected SVG node |
 | `horizontal-overflow` | Scroll width beyond the element's client width. This measures geometry even when local scrolling is intentional. Set an expected value of zero only where the layout contract requires it. |
@@ -38,9 +38,9 @@ For `grid-column-count`, use a whole number of tracks and an optional tolerance 
 Use `--ready` for a selector that appears when the initial page is ready to inspect. Watch mode samples the state you open in its browser. Capture mode opens a fresh page for each width and theme. The report lists pass, fail, and unavailable checks. Capture with `--strict` exits with a failure status when any configured measurement fails or is unavailable.
 
 
-## Shared edge checks
+## Relative alignment checks
 
-Use `relativeTo` to compare the same physical border-box edge on two visible elements. The check returns the subject coordinate minus the reference coordinate in CSS pixels. For `left`, a positive result means the subject starts farther right. For `right`, a negative result means the subject ends farther left. Use a child selector when the intended edge is the content inside a padded box.
+Use `relativeTo` to compare a target edge with an edge on another visible element. `selector` and `metric` identify the target element and its edge; `relativeTo` identifies the source element. The reported value is target coordinate minus source coordinate in CSS pixels. `relativeEdge` optionally chooses the source edge and defaults to `metric`. Both edges must be on the same axis. Horizontal edges are `left`, `right`, and `center-x`; vertical edges are `top`, `bottom`, and `center-y`.
 
 ```json
 {
@@ -50,6 +50,7 @@ Use `relativeTo` to compare the same physical border-box edge on two visible ele
       "selector": "#results-toolbar",
       "metric": "left",
       "relativeTo": "#results-title",
+      "relativeEdge": "left",
       "expected": 0,
       "tolerance": 1
     }
@@ -57,4 +58,10 @@ Use `relativeTo` to compare the same physical border-box edge on two visible ele
 }
 ```
 
-In this example the page specification puts the toolbar and heading on the same reading edge. If the toolbar starts at 40 px and the heading starts at 32 px, the report returns `actual: 8` and `status: "fail"`. At 32 px for both edges it returns `actual: 0` and `status: "pass"`.
+In this example the page specification puts the toolbar and heading on the same reading edge. If the toolbar starts at 40 px and the heading starts at 32 px, the report returns `actual: 8` and `status: "fail"`. At 32 px for both edges it returns `actual: 0` and `status: "pass"`. Reports include the source selector, source edge, and tolerance. Failed comparisons outline both elements and connect the measured edges in the live guide.
+
+Use different edges to express relationships such as a control aligned to a card's far edge or an icon centered against a label:
+
+```json
+{ "id": "action-aligns-to-card-end", "selector": ".card-action", "metric": "right", "relativeTo": ".card", "relativeEdge": "right", "expected": 0 }
+```

@@ -19,7 +19,11 @@
     <div class="toolbar">
       <button id="toggle" class="primary" disabled>Start guides</button>
       <button id="pick" hidden>Inspect element</button>
+      <button id="pick-comparison" hidden>Compare spacing</button>
     </div>
+    <label id="comparison-axis-label" class="comparison-axis" hidden for="comparison-axis">Measure
+      <select id="comparison-axis"><option value="y">Vertical gap</option><option value="x">Horizontal gap</option></select>
+    </label>
     <p id="message" role="status"></p>
 
     <section id="results" aria-label="Inspection results" hidden>
@@ -45,6 +49,10 @@
           <button id="clear">Clear</button>
           <code id="selector"></code>
         </div>
+        <section id="comparison-details" hidden>
+          <h2>Live comparison</h2>
+          <dl id="comparison-values" class="properties"></dl>
+        </section>
         <div class="metrics" aria-label="Element measurements">
           <button id="box-metrics" aria-controls="box-details" aria-pressed="true">Box</button>
           <button id="style-metrics" aria-controls="style-details" aria-pressed="false">Type &amp; layout</button>

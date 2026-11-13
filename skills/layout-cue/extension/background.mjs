@@ -48,7 +48,8 @@ async function inject(tabId, func, parameters) {
 const run = (tabId, origin, action, config) => inject(tabId, inspectPage, {
   action, origin, config: config && { ...config, defaultRegions: guides.regions },
 });
-const inspect = (tabId, origin, action, selector) => inject(tabId, inspectElement, { action, origin, selector });
+const inspect = (tabId, origin, action, selector, comparison, relation, checks) =>
+  inject(tabId, inspectElement, { action, origin, selector, comparison, relation, checks });
 const elementKey = (tabId) => `element:${tabId}`;
 
 const operations = new Map();
@@ -95,7 +96,7 @@ function clickTarget({ origin, selector }) {
   return { clicked: selector };
 }
 
-async function handleMessage({ action, tabId, rules, label, selector, url }, expectedOrigin) {
+async function handleMessage({ action, tabId, rules, label, selector, url, comparison, relation, check }, expectedOrigin) {
   const tab = await chrome.tabs.get(tabId);
   const origin = tabOrigin(tab.url);
   if (!origin) throw new Error('Open an HTTP or HTTPS tab to inspect its layout.');
@@ -126,7 +127,7 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
   const enabled = (await chrome.storage.session.get(key))[key] === origin;
   let current = await settings(origin);
   let report = null;
-  if (!enabled && ['pick', 'select', 'clear'].includes(action)) throw new Error('Start guides before selecting an element.');
+  if (!enabled && ['pick', 'pick-comparison', 'select', 'compare', 'related', 'save-check', 'clear'].includes(action)) throw new Error('Start guides before selecting an element.');
 
   if (action === 'import' || action === 'defaults') {
     current = action === 'import'
@@ -141,23 +142,57 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
     await chrome.storage.session.remove([key, elementKey(tabId)]);
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
-  } else if (['status', 'capture', 'pick', 'select', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
+  } else if (['status', 'capture', 'pick', 'pick-comparison', 'select', 'compare', 'related', 'save-check', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config);
     if (!report?.grids) report = await activate(tabId, origin, current.config);
   }
 
-  if (action === 'clear' || action === 'pick') await chrome.storage.session.remove(elementKey(tabId));
-  const explicit = action === 'select' || (action === 'start' && selector !== undefined);
-  const selectionAction = explicit ? 'select' : ['pick', 'clear', 'start'].includes(action)
+  if (['clear', 'pick', 'pick-comparison'].includes(action)) await chrome.storage.session.remove(elementKey(tabId));
+  const explicit = ['select', 'compare', 'related'].includes(action) || (action === 'start' && selector !== undefined);
+  const selectionAction = explicit ? (action === 'start' ? 'select' : action) : ['pick', 'pick-comparison', 'clear', 'start'].includes(action)
     ? (action === 'start' ? 'auto' : action) : 'status';
-  const selection = report ? await inspect(tabId, origin, selectionAction, selector) : null;
+  let selection = report ? await inspect(tabId, origin, selectionAction, selector, comparison, relation, report.checks) : null;
+  if (action === 'save-check') {
+    const active = selection?.comparison;
+    if (!active?.measurements.length || !check || typeof check.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(check.id)) {
+      throw new Error('Pin a comparison and provide a lowercase check ID.');
+    }
+    const { id, expected, tolerance, minWidth, maxWidth } = check;
+    const checks = active.measurements.map(({ fromSelector, toSelector }, index) => ({
+      id: active.measurements.length === 1 ? id : `${id}-${index + 1}`,
+      selector: toSelector,
+      metric: active.to,
+      relativeTo: fromSelector,
+      relativeEdge: active.from,
+      expected,
+      ...(tolerance === undefined ? {} : { tolerance }),
+      ...(minWidth === undefined ? {} : { minWidth }),
+      ...(maxWidth === undefined ? {} : { maxWidth }),
+    }));
+    const config = parseRules({
+      regions: current.config.regions,
+      checks: [...current.config.checks, ...checks],
+    });
+    current = { config, custom: true, label: current.custom ? current.label : 'Saved checks' };
+    await chrome.storage.local.set({ [ruleKey(origin)]: current });
+    report = await activate(tabId, origin, config);
+    selection = await inspect(tabId, origin, 'status', undefined, undefined, undefined, report.checks);
+  }
   if (explicit) {
     if (!selection?.element) throw new Error(selection?.error ?? 'The selected element is unavailable.');
-    await chrome.storage.session.set({ [elementKey(tabId)]: { selector, pathname: new URL(tab.url).pathname } });
+    await chrome.storage.session.set({ [elementKey(tabId)]: {
+      selector: selector ?? selection.element.selector,
+      pathname: new URL(tab.url).pathname,
+      ...(action === 'compare' ? { comparison } : {}),
+    } });
   }
   if (selection?.element) report.element = selection.element;
+  if (selection?.comparison) report.comparison = selection.comparison;
   if (action === 'capture') {
     if (!report?.element) throw new Error('Select an element with guides on before capturing.');
+    if (report.comparison && !report.comparison.measurements.some(({ drawn }) => drawn)) {
+      throw new Error('Bring both comparison edges into view before capturing the ruler.');
+    }
     if (!report.grids.length) {
       throw new Error('The page grid is unavailable.');
     }
@@ -182,13 +217,16 @@ async function handleMessage({ action, tabId, rules, label, selector, url }, exp
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (message.type === 'element-selected' && sender.frameId === 0 && sender.tab?.id !== undefined) {
+  if (['element-selected', 'comparison-selected'].includes(message.type) && sender.frameId === 0 && sender.tab?.id !== undefined) {
     const tabId = sender.tab.id;
     inOrder(tabId, async () => {
       const key = sessionKey(tabId);
       const origin = (await chrome.storage.session.get(key))[key];
       if (origin && tabOrigin(sender.url) === origin) {
-        await chrome.storage.session.set({ [elementKey(tabId)]: { selector: message.selector, pathname: message.pathname } });
+        await chrome.storage.session.set({ [elementKey(tabId)]: {
+          selector: message.selector, pathname: message.pathname,
+          ...(message.type === 'comparison-selected' ? { comparison: message.comparison } : {}),
+        } });
       }
     }).catch(console.error);
     return false;
@@ -220,7 +258,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
       const selectionKey = elementKey(tabId);
       const selection = (await chrome.storage.session.get(selectionKey))[selectionKey];
       if (selection?.pathname === new URL(tab.url).pathname) {
-        const restored = await inspect(tabId, origin, 'restore', selection.selector);
+        const restored = await inspect(tabId, origin, selection.comparison ? 'compare' : 'restore', selection.selector, selection.comparison);
         if (restored?.element || restored?.picking) return;
       }
       if (selection) await chrome.storage.session.remove(selectionKey);

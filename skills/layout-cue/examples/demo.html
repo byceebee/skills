@@ -182,6 +182,87 @@
         stroke-linejoin: round;
       }
 
+      .demo-edit-trigger,
+      .demo-edit-dialog button {
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .demo-edit-trigger {
+        margin-top: 20px;
+      }
+
+      .demo-edit-dialog {
+        --demo-edit-gap: 28px;
+        width: min(520px, calc(100vw - 32px));
+        max-height: calc(100dvh - 32px);
+        padding: 20px;
+        overflow: auto;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 18px 54px rgb(18 30 42 / 24%);
+      }
+
+      .demo-edit-dialog::backdrop {
+        background: rgb(15 23 32 / 48%);
+      }
+
+      .demo-edit-heading {
+        margin: 0 0 6px;
+        font-size: 18px;
+        line-height: 24px;
+      }
+
+      .demo-edit-description {
+        margin: 0 0 20px;
+        color: var(--quiet);
+        font-size: 13px;
+        line-height: 19px;
+      }
+
+      .demo-edit-fields {
+        display: grid;
+        gap: var(--demo-edit-gap);
+      }
+
+      .demo-edit-field {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .demo-edit-field input {
+        width: 100%;
+        height: 40px;
+        padding: 0 10px;
+        border: 1px solid var(--rule);
+        border-radius: 5px;
+        background: var(--canvas);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .demo-edit-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 20px;
+      }
+
+      .demo-edit-actions button[type="submit"] {
+        border-color: #245c9b;
+        background: #245c9b;
+        color: #fff;
+      }
+
       @media (prefers-color-scheme: dark) {
         :root {
           --canvas: #111820;
@@ -276,7 +357,31 @@
             </div>
           </article>
         </section>
+
+        <button class="demo-edit-trigger" id="demo-edit-open" type="button" aria-haspopup="dialog">Edit workspace profile</button>
       </main>
     </div>
+
+    <dialog class="demo-edit-dialog" id="demo-edit-dialog" aria-labelledby="demo-edit-title" aria-describedby="demo-edit-description">
+      <h2 class="demo-edit-heading" id="demo-edit-title">Edit workspace profile</h2>
+      <p class="demo-edit-description" id="demo-edit-description">Update the details teammates use to identify this workspace.</p>
+      <form id="demo-edit-form" method="dialog">
+        <div class="demo-edit-fields" id="demo-edit-fields">
+          <label class="demo-edit-field" for="demo-edit-name">Workspace name<input id="demo-edit-name" value="Northstar Workspace"></label>
+          <label class="demo-edit-field" for="demo-edit-owner">Workspace owner<input id="demo-edit-owner" value="Morgan Lee"></label>
+          <label class="demo-edit-field" for="demo-edit-email">Contact email<input id="demo-edit-email" type="email" value="morgan@example.test"></label>
+        </div>
+        <div class="demo-edit-actions" id="demo-edit-actions">
+          <button type="button" id="demo-edit-cancel">Cancel</button>
+          <button type="submit" id="demo-edit-save">Save changes</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const editDialog = document.querySelector('#demo-edit-dialog');
+      document.querySelector('#demo-edit-open').addEventListener('click', () => editDialog.showModal());
+      document.querySelector('#demo-edit-cancel').addEventListener('click', () => editDialog.close());
+    </script>
   </body>
 </html>

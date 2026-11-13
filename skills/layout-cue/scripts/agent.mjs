@@ -13,7 +13,7 @@ const defaultSessionFile = resolve(homedir(), '.layout-witness', 'agent.json');
 const nativeSessionFile = resolve(process.env.LAYOUT_WITNESS_NATIVE_SESSION ?? resolve(homedir(), '.layout-witness', 'native-agent.json'));
 const sessionFile = resolve(process.env.LAYOUT_WITNESS_SESSION ?? defaultSessionFile);
 const allowedActions = new Set([
-  'status', 'start', 'capture', 'capture-clean', 'navigate', 'click', 'stop', 'measure', 'pick', 'select', 'clear', 'import', 'defaults', 'disconnect',
+  'status', 'start', 'capture', 'capture-clean', 'navigate', 'click', 'stop', 'measure', 'pick', 'select', 'compare', 'related', 'save-check', 'clear', 'import', 'defaults', 'disconnect',
 ]);
 const payloadLimit = 256 * 1024;
 const responseLimit = 8 * 1024 * 1024;
@@ -26,6 +26,9 @@ const help = `Usage:
   node scripts/agent.mjs navigate <url-or-route>
   node scripts/agent.mjs click <css-selector>
   node scripts/agent.mjs select <css-selector>
+  node scripts/agent.mjs compare <from-edge> <to-edge> <selector-a> <selector-b> [selector-c ...] [--focus]
+  node scripts/agent.mjs save-check <id> <expected> [tolerance] [min-width] [max-width]
+  node scripts/agent.mjs related <parent|child|previous|next>
   node scripts/agent.mjs import <rules.json>`;
 
 function fail(message) {
@@ -35,12 +38,30 @@ function fail(message) {
 function parseArguments(args) {
   const [command, ...rest] = args;
   if (!command || !allowedActions.has(command) && command !== 'serve') fail(help);
+  if (command === 'compare') {
+    const focus = rest.at(-1) === '--focus';
+    if (focus) rest.pop();
+    const [from, to, ...selectors] = rest;
+    if (selectors.length < 2 || selectors.length > 6) fail('Compare needs two to six selectors.');
+    return { command, argument: { from, to, selectors, focus } };
+  }
+  if (command === 'save-check') {
+    if (rest.length < 2 || rest.length > 5 || rest.slice(1).some(value => !value.trim() || !Number.isFinite(Number(value)))) {
+      fail('Save-check needs an ID, numeric expected value, and optional tolerance and viewport bounds.');
+    }
+    const [id, ...values] = rest;
+    const [expected, tolerance, minWidth, maxWidth] = values.map(Number);
+    return { command, argument: { id, expected, tolerance, minWidth, maxWidth } };
+  }
+  if (command === 'related' && (rest.length !== 1 || !['parent', 'child', 'previous', 'next'].includes(rest[0]))) {
+    fail('Related needs parent, child, previous, or next.');
+  }
   if (['select', 'click'].includes(command) && rest.length !== 1) fail(`${command} needs one CSS selector.`);
   if (command === 'navigate' && rest.length !== 1) fail('navigate needs one URL or route.');
   if (command === 'import' && rest.length !== 1) fail('import needs one rules file.');
   if (command === 'start' && rest.length > 1) fail('start accepts at most one CSS selector.');
   if (['capture', 'capture-clean'].includes(command) && (rest.length !== 1 || !/\.jpe?g$/i.test(rest[0]))) fail(`${command} needs one .jpg output path.`);
-  if (!['start', 'select', 'click', 'navigate', 'import', 'capture', 'capture-clean'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
+  if (!['start', 'select', 'click', 'related', 'navigate', 'import', 'capture', 'capture-clean'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
   return { command, argument: rest[0] };
 }
 
@@ -89,6 +110,9 @@ async function sendCommand(command, argument) {
       body: JSON.stringify({
         action: command,
         ...(['start', 'select', 'click'].includes(command) && argument !== undefined ? { selector: argument } : {}),
+        ...(command === 'compare' ? { comparison: argument } : {}),
+        ...(command === 'save-check' ? { check: argument } : {}),
+        ...(command === 'related' ? { relation: argument } : {}),
         ...(command === 'navigate' ? { url: argument } : {}),
         ...(command === 'import' ? { rules, label } : {}),
       }),

@@ -1,10 +1,11 @@
-export function inspectElement({ action, origin, selector: restoreSelector }) {
+export function inspectElement({ action, origin, selector: restoreSelector, comparison, relation, checks }) {
   if (location.origin !== origin) throw new Error('This tab changed to a different site.');
   const key = Symbol.for('layout-witness.element');
   const current = globalThis[key];
-  if (action === 'status') return current?.snapshot() ?? { picking: false, element: null };
+  if (action === 'status') return current?.snapshot(checks) ?? { picking: false, element: null };
   if (action === 'clear') {
     current?.stop();
+    document.querySelectorAll('[data-layout-witness-element]').forEach(host => host.remove());
     return { picking: false, element: null };
   }
   if (action === 'restore' && current) return current.snapshot();
@@ -12,13 +13,49 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     const selection = current.snapshot();
     if (selection.element || selection.picking) return selection;
   }
-  if (!['auto', 'pick', 'restore', 'select'].includes(action)) throw new Error('Unknown element inspection action.');
+  if (!['auto', 'pick', 'pick-comparison', 'restore', 'select', 'compare', 'related'].includes(action)) throw new Error('Unknown element inspection action.');
   function visibleMatches(selector) {
     return [...document.querySelectorAll(selector)].filter(node =>
       node.getClientRects().length && getComputedStyle(node).visibility === 'visible');
   }
 
+  const axes = { left: 'x', right: 'x', 'center-x': 'x', top: 'y', bottom: 'y', 'center-y': 'y' };
+  const isVisible = (node) => {
+    const rect = node?.getBoundingClientRect();
+    return rect?.width > 0 && rect.height > 0 && getComputedStyle(node).visibility === 'visible';
+  };
+
   let requested;
+  if (action === 'compare') {
+    if (!comparison || !Object.hasOwn(axes, comparison.from) || axes[comparison.from] !== axes[comparison.to] ||
+      !Array.isArray(comparison.selectors) || comparison.selectors.length < 2 || comparison.selectors.length > 6 ||
+      new Set(comparison.selectors).size !== comparison.selectors.length ||
+      comparison.selectors.some(value => typeof value !== 'string' || !value.trim() || value.length > 2000)) {
+      return { error: 'Compare two to six distinct CSS selectors using edges on the same axis.' };
+    }
+    try {
+      const matches = comparison.selectors.map(value => visibleMatches(value).filter(isVisible));
+      if (matches.some(nodes => nodes.length !== 1) || new Set(matches.flat()).size !== matches.length) {
+        return { error: 'Each comparison selector must match a distinct visible element.' };
+      }
+      requested = matches[0][0];
+    } catch {
+      return { error: 'Provide valid CSS selectors for comparison.' };
+    }
+  }
+  if (action === 'related') {
+    const currentSelector = current?.snapshot().element?.selector;
+    if (!currentSelector) return { error: 'Select an element before moving to a related element.' };
+    const node = document.querySelector(currentSelector);
+    if (relation === 'parent') requested = node?.parentElement;
+    if (relation === 'child') requested = Array.from(node?.children ?? []).find(isVisible);
+    if (relation === 'previous' || relation === 'next') {
+      const sibling = relation === 'previous' ? 'previousElementSibling' : 'nextElementSibling';
+      requested = node?.[sibling];
+      while (requested && !isVisible(requested)) requested = requested[sibling];
+    }
+    if (!isVisible(requested)) return { error: 'No visible element in that direction.' };
+  }
   if (action === 'auto') {
     const onScreen = (node) => {
       const { top, bottom, left, right, width, height } = node.getBoundingClientRect();
@@ -44,6 +81,8 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     [requested] = matches;
   }
   current?.stop();
+  // An unpacked-extension reload can leave DOM from the previous isolated world.
+  document.querySelectorAll('[data-layout-witness-element]').forEach(host => host.remove());
 
   const host = document.createElement('div');
   host.setAttribute('data-layout-witness-element', '');
@@ -51,6 +90,10 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   Object.assign(host.style, {
     all: 'initial', position: 'fixed', inset: '0', zIndex: '2147483647', pointerEvents: 'none',
   });
+  if (action === 'compare' && comparison.focus === true) {
+    host.setAttribute('data-layout-cue-focus', '');
+    document.querySelector('[data-layout-witness]')?.style.setProperty('visibility', 'hidden');
+  }
   const root = host.attachShadow({ mode: 'closed' });
   const outline = document.createElement('div');
   Object.assign(outline.style, {
@@ -58,7 +101,9 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     outline: '2px solid #2d7efc', outlineOffset: '-1px',
   });
   const hint = document.createElement('div');
-  hint.textContent = 'Click an element, or press Enter on a focused element. Esc cancels.';
+  hint.textContent = action === 'pick-comparison'
+    ? `Choose element A, then hover B to preview the ${comparison?.from === 'right' ? 'horizontal' : 'vertical'} gap. Click B to pin; Enter selects the focused element. Esc cancels.`
+    : 'Click an element, or press Enter on a focused element. Esc cancels.';
   Object.assign(hint.style, {
     position: 'fixed', bottom: '12px', left: '12px', right: '12px',
     width: 'fit-content', maxWidth: 'calc(100vw - 24px)', boxSizing: 'border-box',
@@ -69,14 +114,17 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   guides.style.cssText = 'position:fixed;inset:0;pointer-events:none';
   const ink = guides.getContext('2d');
   root.append(outline, guides);
-  if (action === 'pick') root.append(hint);
+  if (action === 'pick' || action === 'pick-comparison') root.append(hint);
   document.documentElement.append(host);
 
-  let picking = action === 'pick';
+  let picking = action === 'pick' || action === 'pick-comparison';
+  let comparisonFirst;
   let selector = requested ? selectorFor(requested) : restoreSelector;
   const pathname = location.pathname;
   let selected = requested;
   let hovered;
+  let comparisonReport;
+  let activeChecks = checks ?? [];
   let baselineY = null;
   let localGrids = { grids: [], truncated: false };
   let frame;
@@ -88,13 +136,18 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
 
   function draw(node) {
     if (!picking) {
-      if (node?.closest(':modal, :popover-open') && !host.hasAttribute('popover')) {
+      const topLayer = node?.closest(':modal, :popover-open') ??
+        (action === 'compare' ? [...document.querySelectorAll(':modal, :popover-open')].find(layer => layer !== host) : null);
+      if (topLayer && !host.matches(':popover-open')) {
         host.setAttribute('popover', 'manual');
         host.showPopover();
+      } else if (!topLayer && host.matches(':popover-open')) {
+        host.hidePopover();
+        host.removeAttribute('popover');
       }
       paintGuides(node);
     }
-    if (!node?.isConnected || !node.getClientRects().length) {
+    if (action === 'compare' || !node?.isConnected || !node.getClientRects().length) {
       outline.style.display = 'none';
       return;
     }
@@ -119,9 +172,8 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     }
     ink.setTransform(scale, 0, 0, scale, 0, 0);
     ink.clearRect(0, 0, innerWidth, innerHeight);
-    if (!node?.getClientRects().length) return;
-    const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
+    const rect = node?.getBoundingClientRect();
+    const style = node && getComputedStyle(node);
     const dark = document.documentElement.dataset.theme === 'dark' || matchMedia('(prefers-color-scheme: dark)').matches;
     const colors = {
       padding: dark ? '#6ee7b7' : '#047857',
@@ -164,6 +216,78 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
         ink.fillText(text, left + 6, top + h / 2);
         break;
       }
+    }
+
+    if (action === 'compare') {
+      paintComparison();
+      return;
+    }
+    if (!node?.getClientRects().length) return;
+
+    function paintComparison() {
+      const { from, to, selectors } = comparison;
+      const axis = axes[from];
+      const horizontal = axis === 'x';
+      const axisLimit = horizontal ? innerWidth : innerHeight;
+      const crossLimit = horizontal ? innerHeight : innerWidth;
+      const crossStart = horizontal ? 'top' : 'left';
+      const crossEnd = horizontal ? 'bottom' : 'right';
+      const targets = selectors.map(value => {
+        const matches = visibleMatches(value).filter(isVisible);
+        return matches.length === 1 ? matches[0] : null;
+      });
+      const edge = (bounds, name) => {
+        if (name === 'center-x') return bounds.left + bounds.width / 2;
+        if (name === 'center-y') return bounds.top + bounds.height / 2;
+        return bounds[name];
+      };
+      const measurements = [];
+      for (let i = 1; i < targets.length; i++) {
+        const first = targets[i - 1];
+        const second = targets[i];
+        const result = { fromSelector: selectors[i - 1], toSelector: selectors[i], actual: null, drawn: false };
+        measurements.push(result);
+        if (!first || !second || first === second) continue;
+        const a = first.getBoundingClientRect();
+        const b = second.getBoundingClientRect();
+        const start = edge(a, from);
+        const end = edge(b, to);
+        const actual = end - start;
+        result.actual = round(actual);
+        const saved = activeChecks.find(check => check.selector === result.toSelector &&
+          check.relativeTo === result.fromSelector && check.metric === to &&
+          (check.relativeEdge ?? check.metric) === from);
+        if (saved) {
+          const tolerance = saved.tolerance ?? 1;
+          const status = saved.status === 'unavailable' ? saved.status :
+            Math.abs(actual - saved.expected) <= tolerance ? 'pass' : 'fail';
+          result.check = { id: saved.id, expected: saved.expected, tolerance, status };
+        }
+        const visibleCross = bounds => bounds[crossStart] < crossLimit && bounds[crossEnd] > 0;
+        if (Math.min(start, end) < 0 || Math.max(start, end) > axisLimit ||
+          !visibleCross(a) || !visibleCross(b)) continue;
+        const sharedStart = Math.max(0, a[crossStart], b[crossStart]);
+        const sharedEnd = Math.min(crossLimit, a[crossEnd], b[crossEnd]);
+        const cross = (sharedStart + sharedEnd) / 2;
+        const color = result.check?.status === 'fail' ? (dark ? '#fca5a5' : '#b91c1c') :
+          result.check?.status === 'pass' ? colors.padding : colors.grid;
+        const draw = (along1, cross1, along2, cross2, dashed = false) => horizontal
+          ? line(along1, cross1, along2, cross2, color, dashed)
+          : line(cross1, along1, cross2, along2, color, dashed);
+        for (const [point, bounds] of [[start, a], [end, b]]) {
+          const anchor = Math.max(bounds[crossStart], Math.min(cross, bounds[crossEnd]));
+          if (anchor !== cross) draw(point, anchor, point, cross, true);
+          draw(point, cross - 5, point, cross + 5);
+        }
+        draw(start, cross, end, cross);
+        const middle = (start + end) / 2;
+        const verdict = result.check ? ` · ${result.check.status} (target ${result.check.expected})` : '';
+        const text = `${targets.length > 2 ? `${i} · ` : ''}${result.actual} px${verdict}`;
+        label(text, horizontal ? middle : cross + (result.check ? 86 : 48), horizontal ? cross - 17 : middle,
+          color, horizontal ? [middle, cross] : [cross, middle]);
+        result.drawn = true;
+      }
+      comparisonReport = { axis, from, to, focused: comparison.focus === true, measurements };
     }
 
     function ring(outer, inner, color) {
@@ -210,6 +334,22 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     label(`${round(rect.width)} × ${round(rect.height)} px`, rect.left + rect.width / 2, rect.top - 33, colors.grid);
     drawText();
     drawIcon();
+    const clipping = measureClipping(node, rect);
+    const clipColor = dark ? '#fca5a5' : '#b91c1c';
+    for (const [side, amount] of Object.entries(clipping.clipped)) {
+      if (amount <= 0) continue;
+      const boundary = clipping.boundary[side];
+      const vertical = side === 'left' || side === 'right';
+      const start = vertical ? Math.max(rect.top, clipping.boundary.top) : Math.max(rect.left, clipping.boundary.left);
+      const end = vertical ? Math.min(rect.bottom, clipping.boundary.bottom) : Math.min(rect.right, clipping.boundary.right);
+      if (end <= start) continue;
+      const x = vertical ? boundary : (start + end) / 2;
+      const y = vertical ? (start + end) / 2 : boundary;
+      if (vertical) line(boundary, start, boundary, end, clipColor, true);
+      else line(start, boundary, end, boundary, clipColor, true);
+      label(`${amount} px clipped · ${side}`, x + (vertical ? (side === 'left' ? 64 : -64) : 0),
+        y + (side === 'bottom' ? -14 : 14), clipColor, [x, y]);
+    }
 
     function drawSpacingLabels() {
       const centerX = rect.left + rect.width / 2;
@@ -399,6 +539,9 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     cancelAnimationFrame(frame);
     clearInterval(interval);
     host.remove();
+    if (host.hasAttribute('data-layout-cue-focus')) {
+      document.querySelector('[data-layout-witness]')?.style.removeProperty('visibility');
+    }
     delete globalThis[key];
   }
 
@@ -433,7 +576,10 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
       stop();
       return;
     }
-    if (!selected?.isConnected) {
+    if (action === 'compare') {
+      const matches = visibleMatches(comparison.selectors[0]).filter(isVisible);
+      selected = matches.length === 1 ? matches[0] : null;
+    } else if (!selected?.isConnected) {
       const matches = visibleMatches(selector);
       selected = matches.length === 1 ? matches[0] : null;
     }
@@ -459,6 +605,60 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   const round = (number) => Number(number.toFixed(2));
   function box(rect) {
     return { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) };
+  }
+
+  function measureClipping(node, rect) {
+    const boundary = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    const sources = [];
+    const layout = getComputedStyle(node);
+    const offsetParent = node.offsetParent;
+    const canClip = value => ['auto', 'hidden', 'scroll', 'clip', 'overlay'].includes(value);
+    const topLayer = node.closest(':modal, :popover-open');
+    for (let parent = node === topLayer ? null : node.parentElement; parent; parent = parent.parentElement) {
+      if (parent === document.documentElement || parent === document.body) break;
+      if (layout.position === 'absolute' && offsetParent && parent !== offsetParent && offsetParent.contains(parent)) continue;
+      if (layout.position === 'fixed' && !offsetParent) break;
+      const style = getComputedStyle(parent);
+      const clipsX = canClip(style.overflowX);
+      const clipsY = canClip(style.overflowY);
+      if (clipsX || clipsY) {
+        const bounds = parent.getBoundingClientRect();
+        // Scrollports use the client box. overflow:clip uses the padding edge by default.
+        const scaleX = parent.offsetWidth ? bounds.width / parent.offsetWidth : 1;
+        const scaleY = parent.offsetHeight ? bounds.height / parent.offsetHeight : 1;
+        const clipMargin = /^\d+(?:\.\d+)?px$/.test(style.overflowClipMargin)
+          ? Number.parseFloat(style.overflowClipMargin) : 0;
+        const marginX = style.overflowX === 'clip' ? clipMargin * scaleX : 0;
+        const marginY = style.overflowY === 'clip' ? clipMargin * scaleY : 0;
+        const left = bounds.left + parent.clientLeft * scaleX;
+        const top = bounds.top + parent.clientTop * scaleY;
+        const next = { ...boundary };
+        if (clipsX) {
+          next.left = Math.max(next.left, left - marginX);
+          next.right = Math.min(next.right, left + parent.clientWidth * scaleX + marginX);
+        }
+        if (clipsY) {
+          next.top = Math.max(next.top, top - marginY);
+          next.bottom = Math.min(next.bottom, top + parent.clientHeight * scaleY + marginY);
+        }
+        if (Object.keys(next).some(side => next[side] !== boundary[side])) {
+          sources.push({ selector: selectorFor(parent), axes: [clipsX && 'x', clipsY && 'y'].filter(Boolean) });
+          Object.assign(boundary, next);
+        }
+      }
+      if (parent === topLayer) break;
+    }
+    const clipped = {
+      left: round(Math.min(rect.width, Math.max(0, boundary.left - rect.left))),
+      right: round(Math.min(rect.width, Math.max(0, rect.right - boundary.right))),
+      top: round(Math.min(rect.height, Math.max(0, boundary.top - rect.top))),
+      bottom: round(Math.min(rect.height, Math.max(0, rect.bottom - boundary.bottom))),
+    };
+    const width = Math.max(0, Math.min(rect.right, boundary.right) - Math.max(rect.left, boundary.left));
+    const height = Math.max(0, Math.min(rect.bottom, boundary.bottom) - Math.max(rect.top, boundary.top));
+    const status = !width || !height ? 'outside' : Object.values(clipped).some(Boolean) ? 'partial' : 'inside';
+    return { status, clipped, visible: { width: round(width), height: round(height) },
+      boundary: Object.fromEntries(Object.entries(boundary).map(([side, value]) => [side, round(value)])), sources };
   }
 
   function collectLocalGrids(node) {
@@ -571,14 +771,15 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     return { rendered: rect, viewBox, artwork, strokeWidths: [...strokes] };
   }
 
-  function snapshot() {
-    if (picking) return { picking: true, element: null };
+  function snapshot(nextChecks) {
+    if (nextChecks) activeChecks = nextChecks;
+    if (picking) return { picking: true, comparisonPicking: action === 'pick-comparison', element: null };
     if (pathname !== location.pathname) {
       stop();
       return { picking: false, element: null };
     }
     refresh();
-    if (!selected?.isConnected) return { picking: false, element: null };
+    if (!selected?.isConnected) return { picking: false, element: null, comparison: comparisonReport };
     const style = getComputedStyle(selected);
     const sides = ['Top', 'Right', 'Bottom', 'Left'];
     const edges = (prefix, suffix = '') => Object.fromEntries(
@@ -587,10 +788,12 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     return {
       picking: false,
       automatic: action === 'auto',
+      ...(comparisonReport ? { comparison: comparisonReport } : {}),
       element: {
         selector: selectorFor(selected),
         tag: selected.localName,
         box: box(selected.getBoundingClientRect()),
+        clipping: measureClipping(selected, selected.getBoundingClientRect()),
         margin: edges('margin'),
         padding: edges('padding'),
         border: edges('border', 'Width'),
@@ -609,7 +812,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     };
   }
 
-  if (['auto', 'restore', 'select'].includes(action)) {
+  if (['auto', 'restore', 'select', 'compare', 'related'].includes(action)) {
     globalThis[key] = { snapshot, stop };
     refresh();
     followLayout();
@@ -617,11 +820,12 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   }
 
   document.addEventListener('pointermove', (event) => {
-    hovered = event.target;
+    hovered = event.composedPath().find(target => target instanceof Element && target !== host && !host.contains(target)) ?? event.target;
     if (frame !== undefined) return;
     frame = requestAnimationFrame(() => {
       frame = undefined;
-      draw(hovered);
+      if (action === 'pick-comparison' && comparisonFirst) paintPickComparison(comparisonFirst, hovered);
+      else draw(hovered);
     });
   }, options);
   document.addEventListener('keydown', (event) => {
@@ -630,7 +834,8 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     if (event.key !== 'Escape' && !canSelect) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (canSelect) select(target);
+    if (canSelect && action === 'pick-comparison') chooseComparisonNode(target);
+    else if (canSelect) select(target);
     else stop();
   }, options);
   for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup']) {
@@ -643,8 +848,88 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     if (!(event.target instanceof Element)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    select(event.target);
+    if (action === 'pick-comparison') chooseComparisonNode(event.target);
+    else select(event.target);
   }, options);
+
+  function chooseComparisonNode(node) {
+    if (!node?.isConnected || node === host || host.contains(node) || !isVisible(node)) return;
+    if (!comparisonFirst) {
+      comparisonFirst = node;
+      hint.textContent = 'A selected. Hover another element to preview the gap, then click it. Enter selects the focused element; Esc cancels.';
+      draw(node);
+      return;
+    }
+    if (node === comparisonFirst) return;
+    const firstSelector = selectorFor(comparisonFirst);
+    const secondSelector = selectorFor(node);
+    const axis = comparison?.from === 'right' ? 'x' : 'y';
+    const lockedComparison = {
+      from: axis === 'x' ? 'right' : 'bottom',
+      to: axis === 'x' ? 'left' : 'top',
+      selectors: [firstSelector, secondSelector],
+      focus: true,
+    };
+    chrome.runtime.sendMessage({
+      type: 'comparison-selected', selector: firstSelector, pathname, comparison: lockedComparison,
+    }).catch(() => {});
+    inspectElement({ action: 'compare', origin, selector: firstSelector, comparison: lockedComparison });
+  }
+
+  function paintPickComparison(first, second) {
+    if (!first?.isConnected || !second?.isConnected || first === second || !isVisible(second)) return;
+    const topLayer = second?.closest(':modal, :popover-open') ??
+      [...document.querySelectorAll(':modal, :popover-open')].find(layer => layer !== host);
+    if (topLayer && !host.matches(':popover-open')) {
+      host.setAttribute('popover', 'manual');
+      host.showPopover();
+    } else if (!topLayer && host.matches(':popover-open')) {
+      host.hidePopover();
+      host.removeAttribute('popover');
+    }
+    const scale = devicePixelRatio || 1;
+    const width = Math.ceil(innerWidth * scale);
+    const height = Math.ceil(innerHeight * scale);
+    if (guides.width !== width || guides.height !== height) {
+      guides.width = width;
+      guides.height = height;
+      guides.style.width = `${innerWidth}px`;
+      guides.style.height = `${innerHeight}px`;
+    }
+    ink.setTransform(scale, 0, 0, scale, 0, 0);
+    ink.clearRect(0, 0, innerWidth, innerHeight);
+    const a = first.getBoundingClientRect();
+    const b = second.getBoundingClientRect();
+    const horizontal = comparison?.from === 'right';
+    const start = horizontal ? a.right : a.bottom;
+    const end = horizontal ? b.left : b.top;
+    const crossStart = horizontal ? Math.max(a.top, b.top) : Math.max(a.left, b.left);
+    const crossEnd = horizontal ? Math.min(a.bottom, b.bottom) : Math.min(a.right, b.right);
+    const cross = crossStart <= crossEnd ? (crossStart + crossEnd) / 2 : (crossStart + crossEnd) / 2;
+    const edgeStart = horizontal ? [start, cross] : [cross, start];
+    const edgeEnd = horizontal ? [end, cross] : [cross, end];
+    const color = '#2d7efc';
+    ink.strokeStyle = color;
+    ink.fillStyle = '#151922';
+    ink.lineWidth = 1.5;
+    ink.setLineDash([]);
+    ink.beginPath(); ink.moveTo(...edgeStart); ink.lineTo(...edgeEnd); ink.stroke();
+    for (const [x, y] of [edgeStart, edgeEnd]) {
+      ink.beginPath();
+      if (horizontal) { ink.moveTo(x, y - 5); ink.lineTo(x, y + 5); }
+      else { ink.moveTo(x - 5, y); ink.lineTo(x + 5, y); }
+      ink.stroke();
+    }
+    const distance = Number((end - start).toFixed(2));
+    const text = `${distance} px`;
+    ink.font = '600 12px system-ui, sans-serif';
+    const labelWidth = ink.measureText(text).width + 12;
+    const labelX = horizontal ? (start + end - labelWidth) / 2 : cross + 8;
+    const labelY = horizontal ? cross - 9 : (start + end) / 2;
+    ink.fillRect(labelX, labelY - 9, labelWidth, 18);
+    ink.fillStyle = '#fff'; ink.textBaseline = 'middle'; ink.fillText(text, labelX + 6, labelY);
+    hint.textContent = `Preview ${text} ${horizontal ? 'horizontal' : 'vertical'} gap. Click to pin B; move to another element to compare. Esc cancels.`;
+  }
 
   globalThis[key] = { snapshot, stop };
   return snapshot();

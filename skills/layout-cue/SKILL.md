@@ -16,7 +16,7 @@ Use the bundled Chrome extension on the running page. When the user specifies th
 - **Composition** — Open the actual modal, drawer, or card state and select its container. Read `element.localGrids.grids` for detected CSS Grid tracks. For a stack or flex row, use the container's insets, shared edges, and gaps as the local reference.
 - **Atomic** — Select the specific control, label, icon, or hit target to move the ruler. Read `element` for the exact measurements. Compare related elements by measuring the same edge or gap in context.
 
-Keep the page guides running during edits. The element ruler and detected local grids follow one selection at a time, and the page guide can remain visible behind them. **Page** and **Element** in the popup switch the displayed report, while `clear` removes the selection and its local guides without stopping page checks. When a line or label is missing, verify the active state and selection in JSON before interpreting it as a layout issue. A clean render is a separate visual check.
+Keep the page guides running during edits. Use a [pinned edge comparison](references/live-inspection.md#compare-rendered-edges) when a correction depends on the distance between rendered boxes, their inset, or consistent gaps across repeated controls. The element ruler and detected local grids follow one selection at a time, and the page guide can remain visible behind them. **Page** and **Element** in the popup switch the displayed report, while `clear` removes the selection and its local guides without stopping page checks. When a line or label is missing, verify the active state and selection in JSON before interpreting it as a layout issue. A clean render is a separate visual check.
 
 ## Connect to the existing tab
 

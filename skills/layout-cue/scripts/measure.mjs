@@ -5,7 +5,7 @@ export function inspectPage({ action, config, report, origin }) {
       width: view.innerWidth,
       height: view.innerHeight,
     };
-    const positionMetrics = new Set(["left", "right", "top", "bottom"]);
+    const positionMetrics = new Set(["left", "right", "top", "bottom", "center-x", "center-y"]);
     const metricProperties = {
       width: null,
       height: null,
@@ -13,6 +13,8 @@ export function inspectPage({ action, config, report, origin }) {
       right: null,
       top: null,
       bottom: null,
+      "center-x": null,
+      "center-y": null,
       "padding-top": "paddingTop",
       "padding-right": "paddingRight",
       "padding-bottom": "paddingBottom",
@@ -60,6 +62,12 @@ export function inspectPage({ action, config, report, origin }) {
         width: rect.width,
         height: rect.height,
       };
+    }
+
+    function edgeFor(box, edge) {
+      if (edge === "center-x") return (box.left + box.right) / 2;
+      if (edge === "center-y") return (box.top + box.bottom) / 2;
+      return box[edge];
     }
 
     function parseCssPx(value) {
@@ -110,6 +118,12 @@ export function inspectPage({ action, config, report, origin }) {
         actual: null,
         status: "unavailable",
       };
+      const tolerance = rule.tolerance ?? (rule.metric === "grid-column-count" ? 0 : 1);
+      result.tolerance = tolerance;
+      if (rule.relativeTo !== undefined) {
+        result.relativeTo = rule.relativeTo;
+        result.relativeEdge = rule.relativeEdge ?? rule.metric;
+      }
 
       const found = resolve(rule.selector);
       if (!found.element) {
@@ -150,14 +164,15 @@ export function inspectPage({ action, config, report, origin }) {
       } else if (rule.metric === "height") {
         actual = box.height;
       } else if (positionMetrics.has(rule.metric)) {
-        actual = box[rule.metric];
+        actual = edgeFor(box, rule.metric);
         if (rule.relativeTo !== undefined) {
           const target = resolve(rule.relativeTo);
           if (!target.element) {
             result.reason = `relative target ${target.reason}`;
             return result;
           }
-          actual -= boxFor(target.element)[rule.metric];
+          result.relativeBox = boxFor(target.element);
+          actual -= edgeFor(result.relativeBox, rule.relativeEdge ?? rule.metric);
         }
       } else {
         const property = metricProperties[rule.metric];
@@ -173,7 +188,6 @@ export function inspectPage({ action, config, report, origin }) {
         return result;
       }
       result.actual = actual;
-      const tolerance = rule.tolerance ?? (rule.metric === "grid-column-count" ? 0 : 1);
       result.status = Math.abs(actual - rule.expected) <= tolerance ? "pass" : "fail";
       return result;
     });
@@ -207,6 +221,7 @@ export function inspectPage({ action, config, report, origin }) {
       pointerEvents: "none",
       overflow: "hidden",
       colorScheme: "light dark",
+      visibility: document.querySelector("[data-layout-witness-element][data-layout-cue-focus]") ? "hidden" : "",
     });
 
     const drawing = overlay.attachShadow({ mode: "closed" });
@@ -251,6 +266,16 @@ export function inspectPage({ action, config, report, origin }) {
       drawing.appendChild(line);
     }
 
+    function drawComparisonLine(from, to, edge, color) {
+      if (edge === 'left' || edge === 'right' || edge === 'center-x') {
+        const y = (from.y + to.y) / 2;
+        drawLine(from.x, y, to.x, y, color);
+      } else {
+        const x = (from.x + to.x) / 2;
+        drawLine(x, from.y, x, to.y, color);
+      }
+    }
+
     for (const region of report.regions || []) {
       if (region.status !== "available" || !region.box) continue;
       const box = region.box;
@@ -272,7 +297,20 @@ export function inspectPage({ action, config, report, origin }) {
     }
 
     for (const check of report.checks || []) {
-      if (check.status === "fail") drawRect(check.box, failColor, true);
+      if (check.status !== "fail") continue;
+      drawRect(check.box, failColor, true);
+      if (check.relativeBox) {
+        drawRect(check.relativeBox, regionColor, true);
+        const position = (box, edge) => edge === 'center-x' ? { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 }
+          : edge === 'center-y' ? { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 }
+            : edge === 'left' ? { x: box.left, y: (box.top + box.bottom) / 2 }
+              : edge === 'right' ? { x: box.right, y: (box.top + box.bottom) / 2 }
+                : edge === 'top' ? { x: (box.left + box.right) / 2, y: box.top }
+                  : { x: (box.left + box.right) / 2, y: box.bottom };
+        const to = position(check.box, check.metric);
+        const from = position(check.relativeBox, check.relativeEdge);
+        drawComparisonLine(from, to, check.metric, failColor);
+      }
     }
 
     (document.body || document.documentElement).appendChild(overlay);

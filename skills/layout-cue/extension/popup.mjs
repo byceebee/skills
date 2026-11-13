@@ -1,6 +1,8 @@
 const select = (id) => document.getElementById(id);
 const toggle = select('toggle');
 const pick = select('pick');
+const pickComparison = select('pick-comparison');
+const comparisonAxis = select('comparison-axis');
 const clear = select('clear');
 const importButton = select('import');
 const reset = select('reset');
@@ -10,7 +12,7 @@ const message = select('message');
 const connect = select('connect-agent');
 const connectNative = select('connect-native');
 const disconnect = select('disconnect-agent');
-const controls = [toggle, pick, clear, importButton, reset, download, connect, connectNative, disconnect];
+const controls = [toggle, pick, pickComparison, comparisonAxis, clear, importButton, reset, download, connect, connectNative, disconnect];
 
 let tabId;
 let state;
@@ -90,6 +92,9 @@ function drawElement(element) {
   properties('element-box', [
     ['Rendered size', `${element.box.width} × ${element.box.height} px`],
     ['Viewport position', `${element.box.x}, ${element.box.y} px`],
+    ...(element.clipping && element.clipping.status !== 'inside'
+      ? [['Clipping', `${element.clipping.status}${Object.entries(element.clipping.clipped ?? {}).filter(([, pixels]) => pixels > 0).map(([side, pixels]) => ` · ${side} ${pixels} px`).join('')}`]]
+      : []),
   ]);
   const spacing = ['margin', 'border', 'padding'].map((metric) => {
     const row = document.createElement('tr');
@@ -144,8 +149,20 @@ function draw(state) {
   toggle.toggleAttribute('data-running', running);
   pick.hidden = !state.report;
   pick.textContent = state.selection?.picking ? 'Cancel selection' : 'Inspect element';
+  const comparisonPicking = state.selection?.picking && state.selection?.comparisonPicking;
+  pickComparison.hidden = !state.report;
+  pickComparison.textContent = comparisonPicking ? 'Cancel comparison' : 'Compare spacing';
+  select('comparison-axis-label').hidden = !state.report || comparisonPicking;
   select('results').hidden = !state.report;
   const element = state.report?.element;
+  const comparison = state.report?.comparison;
+  select('comparison-details').hidden = !comparison;
+  if (comparison) {
+    properties('comparison-values', comparison.measurements.map(({ actual, drawn, check }, index) => [
+      `${index + 1}. ${comparison.from} → ${comparison.to}${check ? ` · ${check.status}` : ''}`,
+      actual == null ? 'Unavailable' : `${pixels(actual)}${drawn ? '' : ' · offscreen'}`,
+    ]));
+  }
   select('switcher').hidden = !element;
   if (element?.selector !== lastSelector) {
     chooseView(element && !state.selection?.automatic ? 'element' : 'page');
@@ -210,6 +227,15 @@ toggle.addEventListener('click', () => act(async () => {
 pick.addEventListener('click', () => act(async () => {
   const picking = state.selection?.picking;
   state = await request(picking ? 'clear' : 'pick');
+  if (!picking) window.close();
+}));
+pickComparison.addEventListener('click', () => act(async () => {
+  const picking = state.selection?.picking;
+  state = await request(picking ? 'clear' : 'pick-comparison', {
+    comparison: comparisonAxis.value === 'x'
+      ? { from: 'right', to: 'left' }
+      : { from: 'bottom', to: 'top' },
+  });
   if (!picking) window.close();
 }));
 clear.addEventListener('click', () => act(async () => { state = await request('clear'); }));

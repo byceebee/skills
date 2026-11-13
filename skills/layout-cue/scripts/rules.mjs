@@ -1,6 +1,8 @@
-const edges = ['left', 'right', 'top', 'bottom'];
+const edges = ['left', 'right', 'top', 'bottom', 'center-x', 'center-y'];
+const horizontalEdges = new Set(['left', 'right', 'center-x']);
+const verticalEdges = new Set(['top', 'bottom', 'center-y']);
 const metrics = new Set([
-  ...edges, ...edges.map((edge) => `padding-${edge}`),
+  ...edges, ...edges.filter((edge) => !edge.startsWith('center-')).map((edge) => `padding-${edge}`),
   'width', 'height', 'row-gap', 'column-gap', 'line-height', 'font-size', 'stroke-width', 'horizontal-overflow',
   'grid-column-count',
 ]);
@@ -50,14 +52,25 @@ export function parseRules(value) {
     optionalNumber(region, 'inset');
     validateWidthBounds(region);
   });
-  validateEntries(checks, 'checks', ['id', 'selector', 'metric', 'expected', 'tolerance', 'minWidth', 'maxWidth', 'relativeTo'], (rule) => {
+  validateEntries(checks, 'checks', ['id', 'selector', 'metric', 'expected', 'tolerance', 'minWidth', 'maxWidth', 'relativeTo', 'relativeEdge'], (rule) => {
     if (!metrics.has(rule.metric)) throw new Error(`Unsupported metric for ${rule.id}: ${rule.metric}.`);
     if (!Number.isFinite(rule.expected)) throw new Error(`${rule.id} needs a finite expected value.`);
     if (rule.metric === 'grid-column-count') optionalNumber(rule, 'expected', { integer: true });
     optionalNumber(rule, 'tolerance');
     validateWidthBounds(rule);
-    if ('relativeTo' in rule && (!edges.includes(rule.metric) || typeof rule.relativeTo !== 'string' || !rule.relativeTo.trim())) {
-      throw new Error(`${rule.id}.relativeTo must be a selector and can only be used with a box edge.`);
+    if ('relativeTo' in rule && (typeof rule.relativeTo !== 'string' || !rule.relativeTo.trim())) {
+      throw new Error(`${rule.id}.relativeTo must be a selector.`);
+    }
+    if ('relativeEdge' in rule && !('relativeTo' in rule)) {
+      throw new Error(`${rule.id}.relativeEdge requires relativeTo.`);
+    }
+    if ('relativeTo' in rule) {
+      const relativeEdge = rule.relativeEdge ?? rule.metric;
+      const sameAxis = (horizontalEdges.has(rule.metric) && horizontalEdges.has(relativeEdge)) ||
+        (verticalEdges.has(rule.metric) && verticalEdges.has(relativeEdge));
+      if (!edges.includes(rule.metric) || !edges.includes(relativeEdge) || !sameAxis) {
+        throw new Error(`${rule.id}.metric and relativeEdge must be box edges on the same axis.`);
+      }
     }
   });
   if (!regions.length && !checks.length) throw new Error('Configure at least one region or check.');
