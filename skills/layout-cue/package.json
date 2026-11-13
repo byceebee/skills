@@ -1,6 +1,6 @@
 {
-  "name": "layout-witness",
-  "version": "0.2.0",
+  "name": "layout-cue",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "license": "MIT",

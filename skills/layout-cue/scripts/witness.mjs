@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { inspectPage } from './measure.mjs';
 import { parseRules } from './rules.mjs';
 
-const help = `Layout Witness
+const help = `Layout Cue
   node scripts/witness.mjs watch <url> --config <file> [--width <px>] [--height <px>] [--theme light|dark]
   node scripts/witness.mjs capture <url> --config <file> [--width <px> ...] [--theme light|dark ...] [--strict] [--headed]
   Both modes accept --out <directory> and --ready <selector>.`;

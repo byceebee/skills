@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Layout Witness",
-  "version": "0.2.0",
+  "name": "Layout Cue",
+  "version": "0.3.1",
   "description": "Keep layout guides on the active tab and check its rendered geometry.",
   "permissions": [
     "activeTab",
+    "nativeMessaging",
     "scripting",
     "storage"
   ],
@@ -12,7 +13,7 @@
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:*;"
   },
   "action": {
-    "default_title": "Layout Witness",
+    "default_title": "Layout Cue",
     "default_popup": "extension/popup.html",
     "default_icon": {
       "16": "extension/icons/16.png",

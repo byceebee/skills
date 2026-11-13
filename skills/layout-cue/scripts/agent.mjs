@@ -10,15 +10,21 @@ import process from 'node:process';
 import { WebSocket, WebSocketServer } from 'ws';
 
 const defaultSessionFile = resolve(homedir(), '.layout-witness', 'agent.json');
+const nativeSessionFile = resolve(process.env.LAYOUT_WITNESS_NATIVE_SESSION ?? resolve(homedir(), '.layout-witness', 'native-agent.json'));
 const sessionFile = resolve(process.env.LAYOUT_WITNESS_SESSION ?? defaultSessionFile);
 const allowedActions = new Set([
-  'status', 'start', 'stop', 'measure', 'pick', 'select', 'clear', 'import', 'defaults', 'disconnect',
+  'status', 'start', 'capture', 'capture-clean', 'navigate', 'click', 'stop', 'measure', 'pick', 'select', 'clear', 'import', 'defaults', 'disconnect',
 ]);
 const payloadLimit = 256 * 1024;
+const responseLimit = 8 * 1024 * 1024;
 const responseTimeoutMs = 30_000;
 const help = `Usage:
   node scripts/agent.mjs serve
-  node scripts/agent.mjs status|start|stop|measure|pick|clear|defaults|disconnect
+  node scripts/agent.mjs status|stop|measure|pick|clear|defaults|disconnect
+  node scripts/agent.mjs start [css-selector]
+  node scripts/agent.mjs capture|capture-clean <output.jpg>
+  node scripts/agent.mjs navigate <url-or-route>
+  node scripts/agent.mjs click <css-selector>
   node scripts/agent.mjs select <css-selector>
   node scripts/agent.mjs import <rules.json>`;
 
@@ -29,24 +35,32 @@ function fail(message) {
 function parseArguments(args) {
   const [command, ...rest] = args;
   if (!command || !allowedActions.has(command) && command !== 'serve') fail(help);
-  if (command === 'select' && rest.length !== 1) fail('select needs one CSS selector.');
+  if (['select', 'click'].includes(command) && rest.length !== 1) fail(`${command} needs one CSS selector.`);
+  if (command === 'navigate' && rest.length !== 1) fail('navigate needs one URL or route.');
   if (command === 'import' && rest.length !== 1) fail('import needs one rules file.');
-  if (!['select', 'import'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
+  if (command === 'start' && rest.length > 1) fail('start accepts at most one CSS selector.');
+  if (['capture', 'capture-clean'].includes(command) && (rest.length !== 1 || !/\.jpe?g$/i.test(rest[0]))) fail(`${command} needs one .jpg output path.`);
+  if (!['start', 'select', 'click', 'navigate', 'import', 'capture', 'capture-clean'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
   return { command, argument: rest[0] };
 }
 
 async function sendCommand(command, argument) {
   let session;
   try {
-    session = JSON.parse(await readFile(sessionFile, 'utf8'));
+    const preferred = process.env.LAYOUT_WITNESS_SESSION ? sessionFile : nativeSessionFile;
+    const raw = await readFile(preferred, 'utf8').catch((error) => {
+      if (error.code !== 'ENOENT' || preferred === sessionFile) throw error;
+      return readFile(sessionFile, 'utf8');
+    });
+    session = JSON.parse(raw);
   } catch (error) {
-    if (error.code === 'ENOENT') fail('Layout Witness agent is not running. Start it with `node scripts/agent.mjs serve`.');
-    fail(`Cannot read the Layout Witness agent session: ${error.message}`);
+    if (error.code === 'ENOENT') fail('Open the Layout Cue popup and pair a tab with Connect audit tab or the manual pairing URL.');
+    fail(`Cannot read the Layout Cue agent session: ${error.message}`);
   }
 
   if (!Number.isInteger(session?.port) || session.port < 1 || session.port > 65535 ||
       typeof session.token !== 'string' || !/^[a-f0-9]{64}$/.test(session.token)) {
-    fail('Invalid Layout Witness session. Restart the local agent server.');
+    fail('Invalid Layout Cue session. Restart the local agent server.');
   }
 
   let rules;
@@ -74,7 +88,8 @@ async function sendCommand(command, argument) {
       },
       body: JSON.stringify({
         action: command,
-        ...(command === 'select' ? { selector: argument } : {}),
+        ...(['start', 'select', 'click'].includes(command) && argument !== undefined ? { selector: argument } : {}),
+        ...(command === 'navigate' ? { url: argument } : {}),
         ...(command === 'import' ? { rules, label } : {}),
       }),
       signal: controller.signal,
@@ -87,10 +102,30 @@ async function sendCommand(command, argument) {
       process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
       return;
     }
+    if (command === 'capture' || command === 'capture-clean') {
+      if (!result.jpeg?.startsWith('data:image/jpeg;base64,') || (command === 'capture' && !result.report?.element)) {
+        fail('No screenshot for the requested capture mode was received.');
+      }
+      const screenshot = resolve(argument);
+      const measurement = screenshot.replace(/\.jpe?g$/i, '.json');
+      await writeFile(screenshot, Buffer.from(result.jpeg.slice('data:image/jpeg;base64,'.length), 'base64'), { flag: 'wx', mode: 0o600 });
+      if (command === 'capture-clean') {
+        process.stdout.write(`${JSON.stringify({ screenshot }, null, 2)}\n`);
+        return;
+      }
+      try {
+        await writeFile(measurement, `${JSON.stringify(result.report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        await rm(screenshot);
+        throw error;
+      }
+      process.stdout.write(`${JSON.stringify({ screenshot, measurement, selector: result.report.element.selector }, null, 2)}\n`);
+      return;
+    }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
-    if (error.name === 'AbortError') fail('The browser extension did not respond within 30 seconds. Check its pairing in the Layout Witness popup.');
-    if (error.cause?.code === 'ECONNREFUSED') fail('Layout Witness agent is not running. Start it with `node scripts/agent.mjs serve`.');
+    if (error.name === 'AbortError') fail('The browser extension did not respond within 30 seconds. Check its pairing in the Layout Cue popup.');
+    if (error.cause?.code === 'ECONNREFUSED') fail('Open the Layout Cue popup and pair a tab with Connect audit tab or the manual pairing URL.');
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -121,14 +156,14 @@ async function serve() {
     let owner;
     try { owner = JSON.parse(await readFile(lockPath, 'utf8')); } catch {
       const lockAge = Date.now() - (await stat(lockPath)).mtimeMs;
-      if (lockAge < 5_000) fail('A Layout Witness agent process is starting. Retry in a moment.');
+      if (lockAge < 5_000) fail('A Layout Cue agent process is starting. Retry in a moment.');
     }
     if (Number.isInteger(owner?.pid) && owner.pid > 0) {
       try {
         process.kill(owner.pid, 0);
-        fail('A Layout Witness agent process is already running. Use its pairing URL or stop it first.');
+        fail('A Layout Cue agent process is already running. Use its pairing URL or stop it first.');
       } catch (probeError) {
-        if (probeError.code === 'EPERM') fail('A Layout Witness agent process is already running.');
+        if (probeError.code === 'EPERM') fail('A Layout Cue agent process is already running.');
         if (probeError.code !== 'ESRCH') throw probeError;
       }
     }
@@ -169,7 +204,7 @@ async function serve() {
       return;
     }
     if (!browser || browser.readyState !== WebSocket.OPEN) {
-      response.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Pair the active browser tab from the Layout Witness popup.' }));
+      response.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Pair the active browser tab from the Layout Cue popup.' }));
       return;
     }
 
@@ -179,8 +214,9 @@ async function serve() {
         response.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Unknown agent action.' }));
         return;
       }
-      if (message.action === 'select' && (typeof message.selector !== 'string' || !message.selector.trim() || message.selector.length > 2_000)) {
-        response.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'select needs a nonempty CSS selector under 2,000 characters.' }));
+      const hasSelector = message.action === 'select' || (message.action === 'start' && message.selector !== undefined);
+      if (hasSelector && (typeof message.selector !== 'string' || !message.selector.trim() || message.selector.length > 2_000)) {
+        response.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `${message.action} needs a nonempty CSS selector under 2,000 characters.` }));
         return;
       }
 
@@ -204,7 +240,7 @@ async function serve() {
     }
   });
 
-  const wss = new WebSocketServer({ noServer: true, maxPayload: payloadLimit, perMessageDeflate: false });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: responseLimit, perMessageDeflate: false });
   http.on('upgrade', (request, socket, head) => {
     const origin = request.headers.origin ?? '';
     const authorizedOrigin = /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
@@ -235,7 +271,7 @@ async function serve() {
     client.on('close', () => {
       if (browser !== client) return;
       browser = undefined;
-      for (const operation of pending.values()) operation.reject(new Error('The Layout Witness popup disconnected. Pair the tab again.'));
+      for (const operation of pending.values()) operation.reject(new Error('The Layout Cue popup disconnected. Pair the tab again.'));
       pending.clear();
     });
     client.on('error', () => {});
@@ -245,7 +281,7 @@ async function serve() {
     if (shuttingDown) return;
     shuttingDown = true;
     browser?.terminate();
-    for (const operation of pending.values()) operation.reject(new Error('The Layout Witness agent stopped.'));
+    for (const operation of pending.values()) operation.reject(new Error('The Layout Cue agent stopped.'));
     pending.clear();
     await new Promise((resolvePromise) => http.close(resolvePromise));
     wss.close();
@@ -262,7 +298,7 @@ async function serve() {
   const { port } = http.address();
   await rm(sessionFile, { force: true });
   await writeFile(sessionFile, `${JSON.stringify({ port, token: secret })}\n`, { mode: 0o600, flag: 'wx' });
-  console.log(`Pair Layout Witness in its popup: ws://127.0.0.1:${port}/${secret}`);
+  console.log(`Pair Layout Cue in its popup: ws://127.0.0.1:${port}/${secret}`);
   console.log('Agent is listening on 127.0.0.1. Press Ctrl+C to stop.');
 }
 

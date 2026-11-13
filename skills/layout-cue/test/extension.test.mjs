@@ -17,7 +17,7 @@ async function downloadReport(popup) {
   const event = popup.waitForEvent('download');
   await popup.getByRole('button', { name: 'Download report' }).click();
   const download = await event;
-  assert.equal(download.suggestedFilename(), 'layout-witness.json');
+  assert.equal(download.suggestedFilename(), 'layout-cue.json');
   return JSON.parse(await readFile(await download.path(), 'utf8'));
 }
 
@@ -180,7 +180,9 @@ test('agent controls the granted tab and measures an existing selection without 
   const command = async (...args) => JSON.parse((await run(process.execPath, [script, ...args], { env })).stdout);
   const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'text/html' }).end(
-      '<!doctype html><header>Example</header><main><button id="item" style="padding: 8px">Open</button><button>Close</button></main>',
+      request.url === '/other'
+        ? '<!doctype html><h1>Sign in</h1><input id="email">'
+        : '<!doctype html><header>Example</header><main><button id="item" style="padding: 8px">Open</button><button>Close</button></main>',
     );
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -221,9 +223,18 @@ test('agent controls the granted tab and measures an existing selection without 
     await popup.close();
 
     assert.equal((await command('status')).report, null);
-    await command('start');
-    const before = (await command('select', '#item')).report;
+    const started = (await command('start')).report;
+    assert.ok(started.element?.box.width > 0, 'Start must include an atomic ruler');
+    assert.equal(await page.locator(overlay).count(), 1);
+    assert.equal(await page.locator('[data-layout-witness-element]').count(), 1);
+    const before = (await command('start', '#item')).report;
     assert.equal(before.element.padding.left, '8px');
+    await page.bringToFront();
+    const screenshot = join(directory, 'ruler.jpg');
+    const evidence = await command('capture', screenshot);
+    assert.equal(evidence.selector, '#item');
+    assert.equal((await readFile(screenshot)).subarray(0, 3).toString('hex'), 'ffd8ff');
+    assert.equal(JSON.parse(await readFile(join(directory, 'ruler.json'), 'utf8')).element.selector, '#item');
     await assert.rejects(command('select', 'button'), /exactly one visible element/);
     await assert.rejects(command('select', '['), /valid CSS selector/);
     await page.evaluate(() => { window.witnessGuide = document.querySelector('[data-layout-witness-element]'); });
@@ -235,6 +246,7 @@ test('agent controls the granted tab and measures an existing selection without 
 
     await command('clear');
     assert.equal((await command('measure')).element, undefined);
+    await assert.rejects(command('capture', join(directory, 'without-ruler.jpg')), /Select an element/);
     await command('stop');
     await page.locator(overlay).waitFor({ state: 'detached' });
     await assert.rejects(command('measure'), /guides are off/);
@@ -243,6 +255,11 @@ test('agent controls the granted tab and measures an existing selection without 
     await page.reload();
     await page.locator('[data-layout-witness-element]').waitFor();
     assert.equal((await command('measure')).element.selector, '#item');
+    await page.goto(new URL('/other', url).href);
+    await page.locator('[data-layout-witness-element]').waitFor();
+    const noMain = await command('measure');
+    assert.ok(noMain.element?.box.width > 0);
+    assert.ok(noMain.regions.some(region => region.id === 'viewport-grid' && region.columns > 0));
     await page.goto(url.replace('127.0.0.1', 'localhost'));
     await assert.rejects(command('status'), /pair/i);
     assert.equal(downloads, 0);

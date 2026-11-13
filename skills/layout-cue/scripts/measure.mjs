@@ -23,6 +23,7 @@ export function inspectPage({ action, config, report, origin }) {
       "font-size": "fontSize",
       "stroke-width": "strokeWidth",
       "horizontal-overflow": null,
+      "grid-column-count": null,
     };
 
     function visible(element) {
@@ -115,6 +116,23 @@ export function inspectPage({ action, config, report, origin }) {
       let actual;
       if (rule.metric === "horizontal-overflow") {
         actual = Math.max(0, element.scrollWidth - element.clientWidth);
+      } else if (rule.metric === "grid-column-count") {
+        const style = view.getComputedStyle(element);
+        if (!["grid", "inline-grid"].includes(style.display)) {
+          result.reason = "element is not a CSS Grid container";
+          return result;
+        }
+        const template = style.gridTemplateColumns;
+        if (/^subgrid(?:\s|$)/.test(template)) {
+          result.reason = "subgrid columns use parent tracks";
+          return result;
+        }
+        const tracks = template === "none" ? [] : template.replace(/\[(?:\\.|[^\]\\])*\]/g, "").trim().split(/\s+/);
+        if (tracks.some((track) => parseCssPx(track) === null)) {
+          result.reason = "grid columns do not resolve to pixel tracks";
+          return result;
+        }
+        actual = tracks.length;
       } else if (rule.metric === "width") {
         actual = box.width;
       } else if (rule.metric === "height") {
@@ -143,11 +161,19 @@ export function inspectPage({ action, config, report, origin }) {
         return result;
       }
       result.actual = actual;
-      const tolerance = rule.tolerance === undefined ? 1 : rule.tolerance;
+      const tolerance = rule.tolerance ?? (rule.metric === "grid-column-count" ? 0 : 1);
       result.status = Math.abs(actual - rule.expected) <= tolerance ? "pass" : "fail";
       return result;
     });
 
+    if (!regions.some((region) => region.status === "available" && region.columns > 0)) {
+      const { width, height } = viewport;
+      regions.push({
+        id: "viewport-grid", selector: "html", status: "available",
+        box: { left: 0, top: 0, right: width, bottom: height, width, height },
+        columns: width >= 1024 ? 12 : width >= 640 ? 8 : 4, gap: width >= 640 ? 16 : 8,
+      });
+    }
     const explicitTheme = document.documentElement.dataset.theme;
     const theme = explicitTheme === 'dark' || explicitTheme === 'light'
       ? explicitTheme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';

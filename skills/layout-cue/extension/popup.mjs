@@ -8,8 +8,9 @@ const fileInput = select('rules-file');
 const download = select('download');
 const message = select('message');
 const connect = select('connect-agent');
+const connectNative = select('connect-native');
 const disconnect = select('disconnect-agent');
-const controls = [toggle, pick, clear, importButton, reset, download, connect, disconnect];
+const controls = [toggle, pick, clear, importButton, reset, download, connect, connectNative, disconnect];
 
 let tabId;
 let state;
@@ -26,7 +27,7 @@ function status(text = '', error = false) {
 
 async function request(action, data) {
   const response = await chrome.runtime.sendMessage({ action, tabId, ...data });
-  if (!response) throw new Error('Reopen Layout Witness to reconnect to this tab.');
+  if (!response) throw new Error('Reopen Layout Cue to reconnect to this tab.');
   if (response.error) throw new Error(response.error);
   return response.value;
 }
@@ -134,6 +135,7 @@ function draw(state) {
   reset.hidden = !state.hasCustomRules;
   select('agent-status').textContent = state.agentConnected ? 'Connected to this tab' : 'Disconnected';
   select('agent-status').toggleAttribute('data-connected', state.agentConnected);
+  select('agent-native').hidden = state.agentConnected;
   select('agent-pair').hidden = state.agentConnected;
   select('agent-connected').hidden = !state.agentConnected;
   toggle.textContent = state.report ? 'Stop guides' : 'Start guides';
@@ -146,7 +148,7 @@ function draw(state) {
   const element = state.report?.element;
   select('switcher').hidden = !element;
   if (element?.selector !== lastSelector) {
-    chooseView(element ? 'element' : 'page');
+    chooseView(element && !state.selection?.automatic ? 'element' : 'page');
     chooseMetrics('box');
   }
   lastSelector = element?.selector;
@@ -170,7 +172,9 @@ function draw(state) {
     const details = document.createElement('span');
     title.textContent = check.id[0].toUpperCase() + check.id.slice(1).replaceAll('-', ' ');
     details.textContent = check.status === 'fail'
-      ? `${pixels(check.actual)} measured, ${pixels(check.expected)} expected`
+      ? check.metric === 'grid-column-count'
+        ? `${check.actual} columns measured, ${check.expected} expected`
+        : `${pixels(check.actual)} measured, ${pixels(check.expected)} expected`
       : check.reason;
     row.append(title, details);
     return row;
@@ -230,6 +234,7 @@ reset.addEventListener('click', () => act(async () => {
   state = await request('defaults');
   status('Default guides restored.');
 }));
+connectNative.addEventListener('click', () => act(async () => { state = await request('connect-native'); }));
 select('agent-pair').addEventListener('submit', (event) => {
   event.preventDefault();
   act(async () => {
@@ -246,7 +251,7 @@ download.addEventListener('click', () => act(async () => {
   const url = URL.createObjectURL(json);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'layout-witness.json';
+  link.download = 'layout-cue.json';
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }));

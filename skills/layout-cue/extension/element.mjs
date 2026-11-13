@@ -8,13 +8,30 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     return { picking: false, element: null };
   }
   if (action === 'restore' && current) return current.snapshot();
-  if (!['pick', 'restore', 'select'].includes(action)) throw new Error('Unknown element inspection action.');
+  if (action === 'auto' && current) {
+    const selection = current.snapshot();
+    if (selection.element || selection.picking) return selection;
+  }
+  if (!['auto', 'pick', 'restore', 'select'].includes(action)) throw new Error('Unknown element inspection action.');
   function visibleMatches(selector) {
     return [...document.querySelectorAll(selector)].filter(node =>
       node.getClientRects().length && getComputedStyle(node).visibility === 'visible');
   }
 
   let requested;
+  if (action === 'auto') {
+    const onScreen = (node) => {
+      const { top, bottom, left, right, width, height } = node.getBoundingClientRect();
+      return width > 0 && height > 0 && right > 0 && bottom > 0 && top < innerHeight && left < innerWidth;
+    };
+    const scope = visibleMatches('[role="dialog"], dialog[open]').filter(onScreen).at(-1) ?? document;
+    const focused = document.activeElement;
+    requested = focused && focused !== document.body && scope.contains(focused) && onScreen(focused)
+      ? focused : [...scope.querySelectorAll('h1, h2, [role="heading"], main, [role="main"], button, input')]
+        .find(node => onScreen(node) && getComputedStyle(node).visibility === 'visible');
+    requested ??= scope === document ? document.body : scope;
+    if (!requested || !onScreen(requested)) return { picking: false, element: null };
+  }
   if (action === 'select') {
     if (typeof restoreSelector !== 'string' || !restoreSelector.trim()) return { error: 'Provide a CSS selector.' };
     let matches;
@@ -30,6 +47,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
 
   const host = document.createElement('div');
   host.setAttribute('data-layout-witness-element', '');
+  host.setAttribute('aria-hidden', 'true');
   Object.assign(host.style, {
     all: 'initial', position: 'fixed', inset: '0', zIndex: '2147483647', pointerEvents: 'none',
   });
@@ -55,11 +73,12 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   document.documentElement.append(host);
 
   let picking = action === 'pick';
-  let selector = restoreSelector;
+  let selector = requested ? selectorFor(requested) : restoreSelector;
   const pathname = location.pathname;
   let selected = requested;
   let hovered;
   let baselineY = null;
+  let localGrids = { grids: [], truncated: false };
   let frame;
   let interval;
   const baselineCache = new WeakMap();
@@ -68,7 +87,13 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
   const options = { capture: true, signal: events.signal };
 
   function draw(node) {
-    if (!picking) paintGuides(node);
+    if (!picking) {
+      if (node?.closest(':modal, :popover-open') && !host.hasAttribute('popover')) {
+        host.setAttribute('popover', 'manual');
+        host.showPopover();
+      }
+      paintGuides(node);
+    }
     if (!node?.isConnected || !node.getClientRects().length) {
       outline.style.display = 'none';
       return;
@@ -82,6 +107,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
 
   function paintGuides(node) {
     baselineY = null;
+    localGrids = { grids: [], truncated: false };
     const scale = devicePixelRatio || 1;
     const width = Math.ceil(innerWidth * scale);
     const height = Math.ceil(innerHeight * scale);
@@ -104,6 +130,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
       type: dark ? '#f9a8d4' : '#9d174d',
       icon: dark ? '#67e8f9' : '#0e7490',
       grid: dark ? '#93c5fd' : '#1d4ed8',
+      nestedGrid: dark ? '#5eead4' : '#0f766e',
     };
     const px = (value) => Number.parseFloat(value) || 0;
     const labelBoxes = [];
@@ -175,10 +202,11 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
       ring(borderInner, content, colors.padding);
 
       drawSpacingLabels();
-      drawGrid(content);
       drawFlex();
     }
 
+    localGrids = collectLocalGrids(node);
+    for (const grid of localGrids.grids) drawGrid(grid);
     label(`${round(rect.width)} × ${round(rect.height)} px`, rect.left + rect.width / 2, rect.top - 33, colors.grid);
     drawText();
     drawIcon();
@@ -207,27 +235,46 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
       }
     }
 
-    function drawGrid(bounds) {
-      if (!style.display.includes('grid') || style.direction !== 'ltr' || style.writingMode !== 'horizontal-tb') return;
-      for (const [tracks, gap, alignment, horizontal] of [
-        [style.gridTemplateColumns, style.columnGap, style.justifyContent, true],
-        [style.gridTemplateRows, style.rowGap, style.alignContent, false],
-      ]) {
-        if (!/^(?:normal|stretch|start|flex-start)$/.test(alignment)) continue;
-        const sizes = tracks.replace(/\[[^\]]*\]/g, '').trim().split(/\s+/);
-        if (sizes.length < 2 || sizes.some(value => !/^\d+(?:\.\d+)?px$/.test(value))) continue;
-        const gutter = px(gap);
-        let offset = horizontal ? bounds.left : bounds.top;
-        for (const size of sizes.slice(0, -1)) {
-          offset += px(size);
-          for (const position of new Set([offset, offset + gutter])) {
-            if (horizontal) line(position, bounds.top, position, bounds.bottom, colors.grid, true);
-            else line(bounds.left, position, bounds.right, position, colors.grid, true);
+    function drawGrid(grid) {
+      const bounds = grid.contentBox;
+      if (!bounds) return;
+      const right = bounds.x + bounds.width;
+      const bottom = bounds.y + bounds.height;
+      const nested = grid.scope === 'nested';
+      const color = nested ? colors.nestedGrid : colors.grid;
+      ink.save();
+      ink.beginPath();
+      ink.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+      ink.clip();
+      for (const [axis, horizontal] of [[grid.columns, true], [grid.rows, false]]) {
+        if (!axis.tracks || axis.start === null) continue;
+        let offset = axis.start;
+        for (const size of axis.tracks.slice(0, -1)) {
+          offset += size;
+          for (const position of new Set([offset, offset + axis.renderedGap])) {
+            if (horizontal) line(position, bounds.y, position, bottom, color, true);
+            else line(bounds.x, position, right, position, color, true);
           }
-          offset += gutter;
+          offset += axis.renderedGap;
         }
-        if (gutter) label(`${horizontal ? 'Column' : 'Row'} gap ${gutter} px`,
-          horizontal ? bounds.right : bounds.left, horizontal ? bounds.top + 12 : bounds.bottom - 12, colors.grid);
+      }
+      ink.restore();
+
+      if (nested) {
+        ink.strokeStyle = color;
+        ink.setLineDash([4, 3]);
+        ink.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+        const counts = [grid.columns, grid.rows].map(axis => axis.tracks?.length ?? '–');
+        if (grid.depth === 1 && grid.tag !== 'label') {
+          label(`Local grid · ${counts.join(' × ')}`, Math.max(bounds.x + 60, right - 62), bounds.y - 9, color);
+        }
+      } else {
+        for (const [axis, horizontal] of [[grid.columns, true], [grid.rows, false]]) {
+          if (axis.tracks?.length > 1 && axis.start !== null && axis.renderedGap) {
+            label(`${horizontal ? 'Column' : 'Row'} gap ${round(axis.renderedGap)} px`,
+              horizontal ? right : bounds.x, horizontal ? bounds.y + 12 : bottom - 12, color);
+          }
+        }
       }
     }
 
@@ -414,6 +461,88 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     return { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) };
   }
 
+  function collectLocalGrids(node) {
+    const grids = [];
+    const gridDepths = new Map();
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+    let candidate = node;
+    let inspected = 0;
+    while (candidate && inspected < 200 && grids.length < 8) {
+      inspected++;
+      const style = getComputedStyle(candidate);
+      if (['grid', 'inline-grid'].includes(style.display) && style.visibility === 'visible') {
+        const rect = candidate.getBoundingClientRect();
+        if (rect.width && rect.height && rect.right > 0 && rect.bottom > 0 &&
+            rect.left < innerWidth && rect.top < innerHeight) {
+          const scope = candidate === node ? 'selected' : 'nested';
+          const parentGrid = ancestors(candidate).find(parent => gridDepths.has(parent));
+          const depth = scope === 'selected' ? 0 : (gridDepths.get(parentGrid) ?? 0) + 1;
+          gridDepths.set(candidate, depth);
+          grids.push(measureGrid(candidate, style, rect, scope, depth));
+        }
+      }
+      candidate = walker.nextNode();
+    }
+    return { grids, truncated: Boolean(candidate) };
+  }
+
+  function measureGrid(node, style, rect, scope, depth) {
+    const px = (value) => Number.parseFloat(value) || 0;
+    const horizontal = style.writingMode === 'horizontal-tb' && style.direction === 'ltr';
+    const canPlot = horizontal && [node, ...ancestors(node)].every(element => {
+      const css = getComputedStyle(element);
+      if ((css.rotate && css.rotate !== 'none') || (css.scale && css.scale !== 'none')) return false;
+      if (css.transform === 'none') return true;
+      const matrix = new DOMMatrixReadOnly(css.transform);
+      return matrix.is2D && matrix.a === 1 && matrix.b === 0 && matrix.c === 0 && matrix.d === 1;
+    });
+    const left = px(style.borderLeftWidth) + px(style.paddingLeft);
+    const top = px(style.borderTopWidth) + px(style.paddingTop);
+    const right = px(style.borderRightWidth) + px(style.paddingRight);
+    const bottom = px(style.borderBottomWidth) + px(style.paddingBottom);
+    const verticalScrollbar = node.scrollHeight > node.clientHeight && ['auto', 'scroll'].includes(style.overflowY)
+      ? Math.max(0, node.offsetWidth - node.clientWidth - px(style.borderLeftWidth) - px(style.borderRightWidth)) : 0;
+    const horizontalScrollbar = node.scrollWidth > node.clientWidth && ['auto', 'scroll'].includes(style.overflowX)
+      ? Math.max(0, node.offsetHeight - node.clientHeight - px(style.borderTopWidth) - px(style.borderBottomWidth)) : 0;
+    const contentBox = canPlot ? box(new DOMRect(rect.x + left, rect.y + top,
+      Math.max(0, rect.width - left - right - verticalScrollbar),
+      Math.max(0, rect.height - top - bottom - horizontalScrollbar))) : null;
+    const axis = (template, cssGap, align, origin, available, scroll) => {
+      const values = template.replace(/\[[^\]]*\]/g, '').trim().split(/\s+/);
+      const tracks = values.every(value => /^\d+(?:\.\d+)?px$/.test(value)) ? values.map(px) : null;
+      const gap = cssGap === 'normal' ? 0 : /^\d+(?:\.\d+)?px$/.test(cssGap) ? px(cssGap) : null;
+      const result = { tracks, gap, start: null, renderedGap: null };
+      if (!tracks || gap === null || origin === undefined) return result;
+      const count = tracks.length;
+      const free = available - tracks.reduce((sum, size) => sum + size, 0) - gap * (count - 1);
+      let offset = 0;
+      let renderedGap = gap;
+      switch (align) {
+        case 'normal': case 'stretch': case 'start': case 'flex-start': case 'left': break;
+        case 'end': case 'flex-end': case 'right': offset = free; break;
+        case 'center': offset = free / 2; break;
+        case 'space-between': if (count > 1) renderedGap += Math.max(0, free) / (count - 1); break;
+        case 'space-around':
+          if (free < 0) return result;
+          offset = free / count / 2;
+          renderedGap += free / count;
+          break;
+        case 'space-evenly':
+          if (free < 0) return result;
+          offset = free / (count + 1);
+          renderedGap += offset;
+          break;
+        default: return result;
+      }
+      return { ...result, start: round(origin + offset - scroll), renderedGap: round(renderedGap) };
+    };
+    return {
+      selector: selectorFor(node), tag: node.localName, scope, depth, contentBox,
+      columns: axis(style.gridTemplateColumns, style.columnGap, style.justifyContent, contentBox?.x, contentBox?.width, node.scrollLeft),
+      rows: axis(style.gridTemplateRows, style.rowGap, style.alignContent, contentBox?.y, contentBox?.height, node.scrollTop),
+    };
+  }
+
   function findSvg(node) {
     const enclosing = node.closest('svg');
     if (enclosing) return enclosing;
@@ -457,6 +586,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     );
     return {
       picking: false,
+      automatic: action === 'auto',
       element: {
         selector: selectorFor(selected),
         tag: selected.localName,
@@ -464,6 +594,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
         margin: edges('margin'),
         padding: edges('padding'),
         border: edges('border', 'Width'),
+        localGrids,
         layout: {
           display: style.display, boxSizing: style.boxSizing,
           rowGap: style.rowGap, columnGap: style.columnGap,
@@ -478,7 +609,7 @@ export function inspectElement({ action, origin, selector: restoreSelector }) {
     };
   }
 
-  if (action === 'restore' || action === 'select') {
+  if (['auto', 'restore', 'select'].includes(action)) {
     globalThis[key] = { snapshot, stop };
     refresh();
     followLayout();

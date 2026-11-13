@@ -1,7 +1,7 @@
 import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
 import { inspectElement } from './element.mjs';
-import { agentConnected, connectAgent, disconnectAgent } from './agent.mjs';
+import { agentConnected, connectAgent, connectNativeAgent, disconnectAgent } from './agent.mjs';
 
 const guides = parseRules({
   regions: [
@@ -63,14 +63,59 @@ async function activate(tabId, origin, config) {
   return report;
 }
 
-async function handleMessage({ action, tabId, rules, label, selector }, expectedOrigin) {
+function clickTarget({ origin, selector }) {
+  if (location.origin !== origin) return { error: 'The connected tab changed sites.' };
+  let matches;
+  try {
+    matches = document.querySelectorAll(selector);
+  } catch {
+    return { error: 'Use a valid CSS selector.' };
+  }
+  if (matches.length !== 1) return { error: 'The click selector must match exactly one element.' };
+  const target = matches[0];
+  if (typeof target.click !== 'function' || !target.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+    || !target.getClientRects().length || target.closest('[inert], :disabled, [aria-disabled="true"]')) {
+    return { error: 'The click target is hidden or disabled.' };
+  }
+  target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  const box = target.getBoundingClientRect();
+  const left = Math.max(0, box.left);
+  const top = Math.max(0, box.top);
+  const right = Math.min(innerWidth, box.right);
+  const bottom = Math.min(innerHeight, box.bottom);
+  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+  if (right <= left || bottom <= top || !target.contains(hit)) {
+    return { error: 'The click target is clipped or covered.' };
+  }
+  target.click();
+  return { clicked: selector };
+}
+
+async function handleMessage({ action, tabId, rules, label, selector, url }, expectedOrigin) {
   const tab = await chrome.tabs.get(tabId);
   const origin = tabOrigin(tab.url);
   if (!origin) throw new Error('Open an HTTP or HTTPS tab to inspect its layout.');
   if (expectedOrigin && origin !== expectedOrigin) throw new Error('The connected tab changed sites. Pair it again from the toolbar.');
-  if (action === 'connect-agent') {
-    await connectAgent(label, tabId, origin, (request) =>
-      inOrder(tabId, () => handleMessage({ ...request, tabId }, origin)));
+  if (action === 'navigate' || action === 'click') {
+    if (!expectedOrigin) throw new Error('Connect the audit tab before sending browser commands.');
+    if (action === 'navigate') {
+      if (typeof url !== 'string' || !url.trim()) throw new Error('Provide a URL or route.');
+      const destination = new URL(url, tab.url);
+      if (tabOrigin(destination.href) !== origin || destination.username || destination.password) {
+        throw new Error('Navigation is limited to the connected site.');
+      }
+      await chrome.tabs.update(tabId, { url: destination.href });
+      return { navigatingTo: destination.href };
+    }
+    if (typeof selector !== 'string' || !selector.trim()) throw new Error('Provide a CSS selector to click.');
+    const result = await inject(tabId, clickTarget, { origin, selector });
+    if (result?.error || !result) throw new Error(result?.error ?? 'The click target is unavailable.');
+    return result;
+  }
+  if (action === 'connect-agent' || action === 'connect-native') {
+    const runAgentCommand = (request) => inOrder(tabId, () => handleMessage({ ...request, tabId }, origin));
+    if (action === 'connect-native') await connectNativeAgent(tabId, origin, runAgentCommand);
+    else await connectAgent(label, tabId, origin, runAgentCommand);
   }
   if (action === 'disconnect-agent') disconnectAgent(tabId);
   const key = sessionKey(tabId);
@@ -92,18 +137,42 @@ async function handleMessage({ action, tabId, rules, label, selector }, expected
     await chrome.storage.session.remove([key, elementKey(tabId)]);
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
-  } else if (['status', 'pick', 'select', 'clear', 'connect-agent', 'disconnect-agent'].includes(action) && enabled) {
+  } else if (['status', 'capture', 'pick', 'select', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config) ?? await activate(tabId, origin, current.config);
   }
 
   if (action === 'clear' || action === 'pick') await chrome.storage.session.remove(elementKey(tabId));
-  const selectionAction = ['pick', 'select', 'clear'].includes(action) ? action : 'status';
+  const explicit = action === 'select' || (action === 'start' && selector !== undefined);
+  const selectionAction = explicit ? 'select' : ['pick', 'clear', 'start'].includes(action)
+    ? (action === 'start' ? 'auto' : action) : 'status';
   const selection = report ? await inspect(tabId, origin, selectionAction, selector) : null;
-  if (action === 'select') {
+  if (explicit) {
     if (!selection?.element) throw new Error(selection?.error ?? 'The selected element is unavailable.');
     await chrome.storage.session.set({ [elementKey(tabId)]: { selector, pathname: new URL(tab.url).pathname } });
   }
   if (selection?.element) report.element = selection.element;
+  if (action === 'capture') {
+    if (!report?.element) throw new Error('Select an element with guides on before capturing.');
+    if (!report.regions.some(region => region.status === 'available' && region.columns > 0)) {
+      throw new Error('The page grid is unavailable.');
+    }
+    const { x, y, width, height } = report.element.box;
+    if (!(width > 0 && height > 0 && x + width > 0 && y + height > 0
+      && x < report.viewport.width && y < report.viewport.height)) {
+      throw new Error('Scroll the selected element into the viewport before capturing.');
+    }
+  }
+  if (action === 'capture-clean' && enabled) throw new Error('Stop guides before capturing a clean screenshot.');
+  if (action === 'capture' || action === 'capture-clean') {
+    const isActive = async () => {
+      const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      return active?.id === tabId && active.url === tab.url;
+    };
+    if (!await isActive()) throw new Error('Bring the paired tab to the foreground before capturing.');
+    const jpeg = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+    if (!await isActive()) throw new Error('The active tab changed during capture.');
+    return { report, jpeg };
+  }
   return { origin, label: current.label, hasCustomRules: current.custom, report, selection, agentConnected: agentConnected(tabId) };
 }
 
@@ -138,15 +207,18 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
       await chrome.storage.session.remove([key, elementKey(tabId)]);
       return;
     }
-    if (change.status !== 'complete') return;
+    if (change.status !== 'complete' && tab.status !== 'complete') return;
     const { config } = await settings(origin);
     try {
       if (!await run(tabId, origin, 'status', config)) await activate(tabId, origin, config);
       const selectionKey = elementKey(tabId);
       const selection = (await chrome.storage.session.get(selectionKey))[selectionKey];
       if (selection?.pathname === new URL(tab.url).pathname) {
-        await inspect(tabId, origin, 'restore', selection.selector);
-      } else if (selection) await chrome.storage.session.remove(selectionKey);
+        const restored = await inspect(tabId, origin, 'restore', selection.selector);
+        if (restored?.element || restored?.picking) return;
+      }
+      if (selection) await chrome.storage.session.remove(selectionKey);
+      await inspect(tabId, origin, 'auto');
     } catch {
       // A subsequent navigation or a revoked grant can invalidate this tab.
       await chrome.storage.session.remove([key, elementKey(tabId)]);

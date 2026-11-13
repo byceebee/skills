@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Layout Witness</title>
+  <title>Layout Cue</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <header>
       <img src="icons/48.png" alt="" width="36" height="36">
       <div>
-        <h1>Layout Witness</h1>
+        <h1>Layout Cue</h1>
         <p id="origin">Opening current tab…</p>
       </div>
     </header>
@@ -71,8 +71,11 @@
     </details>
     <details id="agent-settings" class="rules">
       <summary><span class="rules-label">Agent access <span id="agent-status">Disconnected</span></span></summary>
+      <div id="agent-native" class="actions">
+        <button id="connect-native" disabled>Connect audit tab</button>
+      </div>
       <form id="agent-pair" class="agent-form">
-        <label for="pairing-url">Pairing URL</label>
+        <label for="pairing-url">Pairing URL (manual connection)</label>
         <input id="pairing-url" type="password" placeholder="Paste from the terminal" autocomplete="off" required>
         <button id="connect-agent" disabled>Connect agent</button>
       </form>

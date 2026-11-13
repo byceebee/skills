@@ -1,4 +1,4 @@
-# Layout Witness rules
+# Layout Cue rules
 
 Create a JSON file with `regions`, `checks`, or both. IDs are unique within each array.
 
@@ -26,8 +26,33 @@ Each check resolves exactly one visible element. Narrow selectors when a compone
 | `left`, `right`, `top`, `bottom` | Viewport-relative box edge, or the difference from the same edge of `relativeTo` |
 | `padding-top`, `padding-right`, `padding-bottom`, `padding-left`, `row-gap`, `column-gap`, `line-height`, `font-size` | Computed pixel value |
 | `stroke-width` | Computed stroke width of the selected SVG node |
-| `horizontal-overflow` | Scroll width beyond the element's client width |
+| `horizontal-overflow` | Scroll width beyond the element's client width. This measures geometry even when local scrolling is intentional. Set an expected value of zero only where the layout contract requires it. |
+| `grid-column-count` | Number of rendered CSS Grid column tracks, including implicit and zero-width tracks |
 
 Expected values and tolerances are numbers in CSS pixels. The default tolerance is 1 px. For strict SVG checks, select the shape with the stroke. A computed keyword such as `line-height: normal` is unavailable.
 
+For `grid-column-count`, use a whole number of tracks and an optional tolerance in tracks. The default is zero. Flex containers and track lists that the browser cannot resolve to pixel lengths, such as subgrid columns, are unavailable. Use width bounds to give the same container separate expectations at narrow and wide sizes.
+
 Use `--ready` for a selector that appears when the initial page is ready to inspect. Watch mode samples the state you open in its browser. Capture mode opens a fresh page for each width and theme. The report lists pass, fail, and unavailable checks. Capture with `--strict` exits with a failure status when any configured measurement fails or is unavailable.
+
+
+## Shared edge checks
+
+Use `relativeTo` to compare the same physical border-box edge on two visible elements. The check returns the subject coordinate minus the reference coordinate in CSS pixels. For `left`, a positive result means the subject starts farther right. For `right`, a negative result means the subject ends farther left. Use a child selector when the intended edge is the content inside a padded box.
+
+```json
+{
+  "checks": [
+    {
+      "id": "toolbar-reading-edge",
+      "selector": "#results-toolbar",
+      "metric": "left",
+      "relativeTo": "#results-title",
+      "expected": 0,
+      "tolerance": 1
+    }
+  ]
+}
+```
+
+In this example the page specification puts the toolbar and heading on the same reading edge. If the toolbar starts at 40 px and the heading starts at 32 px, the report returns `actual: 8` and `status: "fail"`. At 32 px for both edges it returns `actual: 0` and `status: "pass"`.

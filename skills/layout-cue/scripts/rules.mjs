@@ -2,6 +2,7 @@ const edges = ['left', 'right', 'top', 'bottom'];
 const metrics = new Set([
   ...edges, ...edges.map((edge) => `padding-${edge}`),
   'width', 'height', 'row-gap', 'column-gap', 'line-height', 'font-size', 'stroke-width', 'horizontal-overflow',
+  'grid-column-count',
 ]);
 
 function assertObject(value, keys, label) {
@@ -52,6 +53,7 @@ export function parseRules(value) {
   validateEntries(checks, 'checks', ['id', 'selector', 'metric', 'expected', 'tolerance', 'minWidth', 'maxWidth', 'relativeTo'], (rule) => {
     if (!metrics.has(rule.metric)) throw new Error(`Unsupported metric for ${rule.id}: ${rule.metric}.`);
     if (!Number.isFinite(rule.expected)) throw new Error(`${rule.id} needs a finite expected value.`);
+    if (rule.metric === 'grid-column-count') optionalNumber(rule, 'expected', { integer: true });
     optionalNumber(rule, 'tolerance');
     validateWidthBounds(rule);
     if ('relativeTo' in rule && (!edges.includes(rule.metric) || typeof rule.relativeTo !== 'string' || !rule.relativeTo.trim())) {
