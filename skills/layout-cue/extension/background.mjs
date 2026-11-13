@@ -1,5 +1,6 @@
 import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
+import { discoverLayout } from '../scripts/discover.mjs';
 import { inspectElement } from './element.mjs';
 import { agentConnected, connectAgent, connectNativeAgent, disconnectAgent } from './agent.mjs';
 
@@ -96,11 +97,49 @@ function clickTarget({ origin, selector }) {
   return { clicked: selector };
 }
 
-async function handleMessage({ action, tabId, rules, label, selector, url, comparison, relation, check }, expectedOrigin) {
+function readAuditContext({ origin, selector }) {
+  if (location.origin !== origin) throw new Error('The connected tab changed sites.');
+  const matches = selector ? [...document.querySelectorAll(selector)].filter(node =>
+    node.getClientRects().length && getComputedStyle(node).visibility === 'visible') : [];
+  return {
+    ready: selector ? matches.length === 1 : true,
+    route: location.pathname + location.search + location.hash,
+    animating: matches[0]?.getAnimations({ subtree: true }).some(animation =>
+      animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().endTime)) ?? false,
+    scroll: {
+      viewport: [scrollX, scrollY],
+      containers: Array.from(document.querySelectorAll('*')).flatMap((node, index) =>
+        node.scrollLeft || node.scrollTop ? [{ index, x: node.scrollLeft, y: node.scrollTop }] : []),
+    },
+  };
+}
+
+function hideAuditOverlays({ origin, hidden }) {
+  if (location.origin !== origin) throw new Error('The connected tab changed sites.');
+  document.documentElement.toggleAttribute('data-layout-cue-capture-clean', hidden);
+  document.querySelectorAll('[data-layout-witness], [data-layout-witness-element]').forEach(node => {
+    if (hidden) node.style.setProperty('opacity', '0', 'important');
+    else node.style.removeProperty('opacity');
+  });
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))));
+}
+
+async function handleMessage({ action, tabId, rules, label, selector, url, comparison, relation, check, tokens }, expectedOrigin) {
   const tab = await chrome.tabs.get(tabId);
   const origin = tabOrigin(tab.url);
   if (!origin) throw new Error('Open an HTTP or HTTPS tab to inspect its layout.');
   if (expectedOrigin && origin !== expectedOrigin) throw new Error('The connected tab changed sites. Pair it again from the toolbar.');
+  if (action === 'ready') {
+    if (typeof selector !== 'string' || !selector.trim()) throw new Error('Provide a readiness selector.');
+    return inject(tabId, readAuditContext, { origin, selector });
+  }
+  if (action === 'discover') {
+    if (typeof selector !== 'string' || !selector.trim()) throw new Error('Provide a composition selector.');
+    const result = await inject(tabId, discoverLayout, { selector, tokens, origin });
+    if (!result || result.error) throw new Error(result?.error ?? 'Discovery is unavailable.');
+    return result;
+  }
+  if (action === 'export-rules') return { rules: (await settings(origin)).config };
   if (action === 'navigate' || action === 'click') {
     if (!expectedOrigin) throw new Error('Connect the audit tab before sending browser commands.');
     if (action === 'navigate') {
@@ -109,7 +148,8 @@ async function handleMessage({ action, tabId, rules, label, selector, url, compa
       if (tabOrigin(destination.href) !== origin || destination.username || destination.password) {
         throw new Error('Navigation is limited to the connected site.');
       }
-      await chrome.tabs.update(tabId, { url: destination.href });
+      if (destination.href === tab.url) await chrome.tabs.reload(tabId);
+      else await chrome.tabs.update(tabId, { url: destination.href });
       return { navigatingTo: destination.href };
     }
     if (typeof selector !== 'string' || !selector.trim()) throw new Error('Provide a CSS selector to click.');
@@ -142,7 +182,7 @@ async function handleMessage({ action, tabId, rules, label, selector, url, compa
     await chrome.storage.session.remove([key, elementKey(tabId)]);
     await run(tabId, origin, 'stop');
     await inspect(tabId, origin, 'clear');
-  } else if (['status', 'capture', 'pick', 'pick-comparison', 'select', 'compare', 'related', 'save-check', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
+  } else if (['status', 'capture', 'capture-matched-clean', 'pick', 'pick-comparison', 'select', 'compare', 'related', 'save-check', 'clear', 'connect-agent', 'connect-native', 'disconnect-agent'].includes(action) && enabled) {
     report = await run(tabId, origin, 'status', current.config);
     if (!report?.grids) report = await activate(tabId, origin, current.config);
   }
@@ -188,7 +228,7 @@ async function handleMessage({ action, tabId, rules, label, selector, url, compa
   }
   if (selection?.element) report.element = selection.element;
   if (selection?.comparison) report.comparison = selection.comparison;
-  if (action === 'capture') {
+  if (action === 'capture' || action === 'capture-matched-clean') {
     if (!report?.element) throw new Error('Select an element with guides on before capturing.');
     if (report.comparison && !report.comparison.measurements.some(({ drawn }) => drawn)) {
       throw new Error('Bring both comparison edges into view before capturing the ruler.');
@@ -199,19 +239,36 @@ async function handleMessage({ action, tabId, rules, label, selector, url, compa
     const { x, y, width, height } = report.element.box;
     if (!(width > 0 && height > 0 && x + width > 0 && y + height > 0
       && x < report.viewport.width && y < report.viewport.height)) {
-      throw new Error('Scroll the selected element into the viewport before capturing.');
+      if (report.element.clipping?.status !== 'outside') {
+        throw new Error('Scroll the selected element into the viewport before capturing.');
+      }
     }
   }
   if (action === 'capture-clean' && enabled) throw new Error('Stop guides before capturing a clean screenshot.');
-  if (action === 'capture' || action === 'capture-clean') {
+  if (['capture', 'capture-clean', 'capture-matched-clean'].includes(action)) {
     const isActive = async () => {
       const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
       return active?.id === tabId && active.url === tab.url;
     };
     if (!await isActive()) throw new Error('Bring the paired tab to the foreground before capturing.');
-    const jpeg = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
-    if (!await isActive()) throw new Error('The active tab changed during capture.');
-    return { report, jpeg };
+    const matchedClean = action === 'capture-matched-clean';
+    if (report) report.context = await inject(tabId, readAuditContext, { origin });
+    try {
+      if (matchedClean) await inject(tabId, hideAuditOverlays, { origin, hidden: true });
+      const jpeg = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 90 });
+      if (!await isActive()) throw new Error('The active tab changed during capture.');
+      if (report) {
+        const context = await inject(tabId, readAuditContext, { origin });
+        if (JSON.stringify(context) !== JSON.stringify(report.context)) {
+          throw new Error('The route or scroll position changed during capture.');
+        }
+      }
+      return { report, jpeg };
+    } finally {
+      if (matchedClean && (await chrome.tabs.get(tabId).catch(() => null))?.url === tab.url) {
+        await inject(tabId, hideAuditOverlays, { origin, hidden: false });
+      }
+    }
   }
   return { origin, label: current.label, hasCustomRules: current.custom, report, selection, agentConnected: agentConnected(tabId) };
 }

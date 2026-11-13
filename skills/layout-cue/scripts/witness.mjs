@@ -80,11 +80,11 @@ async function capture(browser, settings) {
       await page.evaluate(inspectPage, { action: 'paint', report });
       await page.screenshot({ path: join(directory, 'overlay.png'), animations: 'disabled' });
       await saveJson(join(directory, 'layout.json'), report);
-      const counts = { pass: 0, fail: 0, unavailable: 0 };
+      const counts = { pass: 0, fail: 0, unavailable: 0, skipped: 0 };
       for (const { status } of report.checks) counts[status]++;
       const unavailableRegions = report.regions.filter((region) => !region.box).length;
       results.push({ name, ...counts, unavailableRegions });
-      console.log(`${name}: ${counts.fail} failed, ${counts.unavailable} unavailable, ${unavailableRegions} unavailable regions.`);
+      console.log(`${name}: ${counts.fail} failed, ${counts.unavailable} unavailable, ${counts.skipped} skipped, ${unavailableRegions} unavailable regions.`);
     } finally { await page.close(); }
   }
   await saveJson(join(settings.output, 'summary.json'), { results });

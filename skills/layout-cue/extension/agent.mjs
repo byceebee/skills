@@ -1,5 +1,5 @@
 const pairingUrl = /^ws:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/[a-f0-9]{64}$/;
-const commands = new Set(['status', 'start', 'capture', 'capture-clean', 'navigate', 'click', 'stop', 'pick', 'select', 'compare', 'related', 'save-check', 'clear', 'import', 'defaults']);
+const commands = new Set(['status', 'start', 'capture', 'capture-clean', 'capture-matched-clean', 'ready', 'discover', 'export-rules', 'navigate', 'click', 'stop', 'pick', 'select', 'compare', 'related', 'save-check', 'clear', 'import', 'defaults']);
 let session;
 
 export function agentConnected(tabId) {

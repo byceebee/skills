@@ -46,6 +46,12 @@ Use `navigate` for routes and URLs on the connected origin. It returns when navi
 
 Use `status` to confirm the pairing and guides. Use `measure` for live JSON without a download and `capture` for saved evidence. The [capability map](references/live-inspection.md#live-controls) lists the remaining controls and what they affect.
 
+## Find and verify a correction
+
+Use [discovery](references/live-inspection.md#discover-layout-candidates-and-share-checks) on the smallest relevant composition to surface candidates. Inspect the reported target and container, identify the CSS or shared component that owns the relationship, then confirm the project's intended behavior. Use scoped checks for initial visibility, spacing, and alignment. Distinguish an action that must appear immediately from content that is allowed to scroll.
+
+Use [replay](references/live-inspection.md#replay-an-audit-state) when an interaction must be repeated across revisions or breakpoints. Capture the starting state, edit the source, and run the same recipe again. Inspect the clean render for hierarchy, reading order, and reachability. Export confirmed checks for the project's rules.
+
 ## Audit evidence
 
 For each page or interaction state in scope, bring the relevant UI into view and select the element you are judging. Use a separate selection when the question moves from the shell or group to an individual control, label, icon, or hit target. Run `capture <output.jpg>` while the paired tab is active. It saves the native screenshot and a measurement JSON with the same stem. It refuses capture when the ruler is missing, the element is offscreen, or the paired tab is in the background. Verify the intended selector in the JSON and the grid, ruler and relevant labels in the image. Replace the initial automatic selection with the actual element for each atomic finding.
@@ -73,7 +79,7 @@ Select the composition first, then inspect individual controls where their measu
 
 ## Check overflow at the right scope
 
-Use `horizontal-overflow` on the page to check for unintended horizontal scrolling. The same metric on a component reports how much content extends beyond its visible width. A positive value on an intentionally scrollable filter bar can be expected when there are many chips. Check that only the bar scrolls, the last chip can be fully revealed and activated, keyboard focus brings offscreen controls into view, and there is a visible cue that more filters exist. Capture both ends if the finding depends on reachability. Report clipped or unreachable controls and evaluate reflow separately at 320 CSS pixels.
+Use `horizontal-overflow` on the page to check for unintended horizontal scrolling. The same metric on a component reports how much content extends beyond its visible width. A positive value on an intentionally scrollable filter bar can be expected when there are many chips. Check that only the bar scrolls, the last chip can be fully revealed and activated, keyboard focus brings offscreen controls into view, and there is a visible cue that more filters exist. Capture both ends if the finding depends on reachability. Report clipped or unreachable controls and evaluate reflow separately at 320 CSS pixels. For dense tables, preserve readable type, cell padding, and useful column widths. A contained horizontal scroll is valid when the page itself fits, a visible cue indicates more columns, and touch and keyboard users can reach the full values and actions.
 
 ## Inspect local grids
 

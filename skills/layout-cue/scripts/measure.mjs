@@ -26,6 +26,8 @@ export function inspectPage({ action, config, report, origin }) {
       "stroke-width": "strokeWidth",
       "horizontal-overflow": null,
       "grid-column-count": null,
+      "visible-height": null,
+      "clipped-height": null,
     };
 
     function visible(element) {
@@ -62,6 +64,33 @@ export function inspectPage({ action, config, report, origin }) {
         width: rect.width,
         height: rect.height,
       };
+    }
+
+    function measureVisibleHeight(element, box) {
+      let top = 0;
+      let bottom = view.innerHeight;
+      const topLayer = element.closest(':modal, :popover-open');
+      const position = view.getComputedStyle(element).position;
+      const offsetParent = element.offsetParent;
+      for (let parent = element === topLayer ? null : element.parentElement; parent; parent = parent.parentElement) {
+        if (parent === document.documentElement || parent === document.body) break;
+        if (position === 'fixed' && !offsetParent) break;
+        if (position === 'absolute' && offsetParent && parent !== offsetParent && offsetParent.contains(parent)) continue;
+        const style = view.getComputedStyle(parent);
+        if (!["auto", "hidden", "scroll", "clip", "overlay"].includes(style.overflowY)) {
+          if (parent === topLayer) break;
+          continue;
+        }
+        const bounds = parent.getBoundingClientRect();
+        const scaleY = parent.offsetHeight ? bounds.height / parent.offsetHeight : 1;
+        const clipMargin = style.overflowY === "clip" && /^\d+(?:\.\d+)?px$/.test(style.overflowClipMargin)
+          ? Number.parseFloat(style.overflowClipMargin) * scaleY : 0;
+        const scrollportTop = bounds.top + parent.clientTop * scaleY - clipMargin;
+        top = Math.max(top, scrollportTop);
+        bottom = Math.min(bottom, scrollportTop + parent.clientHeight * scaleY + clipMargin);
+        if (parent === topLayer) break;
+      }
+      return Math.max(0, Math.min(box.bottom, bottom) - Math.max(box.top, top));
     }
 
     function edgeFor(box, edge) {
@@ -120,6 +149,31 @@ export function inspectPage({ action, config, report, origin }) {
       };
       const tolerance = rule.tolerance ?? (rule.metric === "grid-column-count" ? 0 : 1);
       result.tolerance = tolerance;
+      if (rule.pathname !== undefined && location.pathname !== rule.pathname) {
+        result.status = "skipped";
+        result.reason = `pathname does not match ${rule.pathname}`;
+        return result;
+      }
+      if (rule.pathname !== undefined) result.pathname = rule.pathname;
+      if (rule.whenVisible !== undefined) {
+        result.whenVisible = rule.whenVisible;
+        let gates;
+        try {
+          gates = Array.from(document.querySelectorAll(rule.whenVisible)).filter(visible);
+        } catch {
+          result.reason = "invalid whenVisible selector";
+          return result;
+        }
+        if (!gates.length) {
+          result.status = "skipped";
+          result.reason = "whenVisible target is absent or hidden";
+          return result;
+        }
+        if (gates.length > 1) {
+          result.reason = "whenVisible selector matches multiple visible elements";
+          return result;
+        }
+      }
       if (rule.relativeTo !== undefined) {
         result.relativeTo = rule.relativeTo;
         result.relativeEdge = rule.relativeEdge ?? rule.metric;
@@ -163,6 +217,10 @@ export function inspectPage({ action, config, report, origin }) {
         actual = box.width;
       } else if (rule.metric === "height") {
         actual = box.height;
+      } else if (rule.metric === "visible-height") {
+        actual = measureVisibleHeight(element, box);
+      } else if (rule.metric === "clipped-height") {
+        actual = Math.max(0, box.height - measureVisibleHeight(element, box));
       } else if (positionMetrics.has(rule.metric)) {
         actual = edgeFor(box, rule.metric);
         if (rule.relativeTo !== undefined) {
@@ -222,6 +280,7 @@ export function inspectPage({ action, config, report, origin }) {
       overflow: "hidden",
       colorScheme: "light dark",
       visibility: document.querySelector("[data-layout-witness-element][data-layout-cue-focus]") ? "hidden" : "",
+      opacity: document.documentElement.hasAttribute("data-layout-cue-capture-clean") ? "0" : "",
     });
 
     const drawing = overlay.attachShadow({ mode: "closed" });

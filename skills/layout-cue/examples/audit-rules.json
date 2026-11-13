@@ -1,0 +1,23 @@
+{
+  "checks": [
+    {
+      "id": "save-visible-on-open",
+      "pathname": "/",
+      "whenVisible": "#demo-edit-dialog[open]",
+      "selector": "#demo-edit-save",
+      "metric": "clipped-height",
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "footer-action-gap",
+      "pathname": "/",
+      "whenVisible": "#demo-edit-dialog[open]",
+      "selector": "#demo-edit-save",
+      "metric": "left",
+      "relativeTo": "#demo-edit-cancel",
+      "relativeEdge": "right",
+      "expected": 8
+    }
+  ]
+}

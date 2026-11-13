@@ -184,7 +184,7 @@ function draw(state) {
   const count = (status) => checks.filter((check) => check.status === status).length;
   const regionsVisible = regions.filter((region) => region.status === 'available').length;
   const summary = checks.length
-    ? `${count('pass')} passed · ${count('fail')} failed · ${count('unavailable')} unavailable`
+    ? `${count('pass')} passed · ${count('fail')} failed · ${count('unavailable')} unavailable${count('skipped') ? ` · ${count('skipped')} skipped` : ''}`
     : `${regionsVisible} visible guides · No checks configured`;
   if (select('summary').textContent !== summary) select('summary').textContent = summary;
 

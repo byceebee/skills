@@ -77,3 +77,36 @@ The last two arguments scope this check to 320 through 360 CSS pixels. Once save
 ### Check clipping
 
 Select the control and read `element.clipping`. It reports the visible box size, CSS pixels clipped on each side, and overflow containers that restrict the viewport. The overlay marks the boundary where it intersects the control. Scroll or focus the control and measure again to distinguish initially clipped content from an unreachable action. This is a rectangular geometry estimate for viewport and overflow clipping. Occlusion, masks, clip paths, and transformed geometry still need browser verification.
+
+## Replay an audit state
+
+Write a recipe for one route, state, and viewport. Use stable selectors from the project and keep every click limited to opening the audited state.
+
+```json
+{
+  "version": 1,
+  "id": "edit-profile",
+  "route": "/",
+  "state": "edit-initial",
+  "steps": [{ "click": "#demo-edit-open" }],
+  "ready": "#demo-edit-dialog[open]",
+  "target": "#demo-edit-save",
+  "viewport": { "width": 360, "height": 812 }
+}
+```
+
+Set the viewport in the paired Chrome tab. Import the same [project rules](rules.md) for both runs. A rule can use `pathname` and `whenVisible` to skip other pages and states. To check that an action is fully visible when a modal opens, use `clipped-height` with expected zero and verify keyboard reachability separately.
+
+```sh
+node "$WITNESS_DIR/scripts/replay.mjs" recipe.json before ./edit-profile-360
+# Apply and verify the correction in the project.
+node "$WITNESS_DIR/scripts/replay.mjs" recipe.json after ./edit-profile-360
+```
+
+Replay reopens the route, waits for visible targets and finite state animations, and uses `capture-pair` to save ruler, clean, and JSON evidence. Keep the tab foregrounded and let its layout settle. Review the two images and the report. A change in viewport, theme, route, or scroll marks the comparison unverified. Create a separate recipe and evidence directory for each required viewport. Review selector stability, baseline data, and the project's intended state before replaying.
+
+## Discover layout candidates and share checks
+
+Run `agent.mjs discover <composition-selector> [tokens.json]` on a unique composition, such as a sidebar, form, or results group. The optional JSON supplies numeric spacing values, for example `{"small":8,"medium":16}`. Findings give a target, related container, rendered geometry, and relevant computed CSS. Use these to locate the code responsible for a layout relationship. Treat wrapping, unusual gaps, and scroll reachability as prompts for inspection. Use the design system, brief, or an approved peer to choose the expected value. The nearest supplied token is a hint.
+
+Run `agent.mjs export-rules <new-file.json>` to export the current site's rules, including saved comparisons. Review the selectors and scope and record the source of each target alongside the rule file before committing it to the consuming project. Use import or unattended capture to run the same rules again. Keep route-specific recipes and screenshots in the consuming project's evidence.

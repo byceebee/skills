@@ -1,0 +1,4 @@
+/* Demo regression. Replace 354px with calc(100dvh - 32px) to restore the original layout. */
+.demo-edit-dialog {
+  max-height: 354px;
+}

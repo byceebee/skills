@@ -5,6 +5,7 @@ const metrics = new Set([
   ...edges, ...edges.filter((edge) => !edge.startsWith('center-')).map((edge) => `padding-${edge}`),
   'width', 'height', 'row-gap', 'column-gap', 'line-height', 'font-size', 'stroke-width', 'horizontal-overflow',
   'grid-column-count',
+  'visible-height', 'clipped-height',
 ]);
 
 function assertObject(value, keys, label) {
@@ -52,12 +53,17 @@ export function parseRules(value) {
     optionalNumber(region, 'inset');
     validateWidthBounds(region);
   });
-  validateEntries(checks, 'checks', ['id', 'selector', 'metric', 'expected', 'tolerance', 'minWidth', 'maxWidth', 'relativeTo', 'relativeEdge'], (rule) => {
+  validateEntries(checks, 'checks', ['id', 'selector', 'metric', 'expected', 'tolerance', 'minWidth', 'maxWidth', 'relativeTo', 'relativeEdge', 'pathname', 'whenVisible'], (rule) => {
     if (!metrics.has(rule.metric)) throw new Error(`Unsupported metric for ${rule.id}: ${rule.metric}.`);
     if (!Number.isFinite(rule.expected)) throw new Error(`${rule.id} needs a finite expected value.`);
     if (rule.metric === 'grid-column-count') optionalNumber(rule, 'expected', { integer: true });
     optionalNumber(rule, 'tolerance');
     validateWidthBounds(rule);
+    for (const field of ['pathname', 'whenVisible']) {
+      if (field in rule && (typeof rule[field] !== 'string' || !rule[field].trim())) {
+        throw new Error(`${rule.id}.${field} must be a non-empty string.`);
+      }
+    }
     if ('relativeTo' in rule && (typeof rule.relativeTo !== 'string' || !rule.relativeTo.trim())) {
       throw new Error(`${rule.id}.relativeTo must be a selector.`);
     }

@@ -388,6 +388,13 @@ test('agent controls the granted tab and measures an existing selection without 
     }
     await page.locator('#demo-edit-dialog').evaluate(el => el.style.setProperty('--demo-edit-gap', '12px'));
     const comparisonAfter = await command('measure');
+    const exported = join(directory, 'exported-rules.json');
+    await command('export-rules', exported);
+    assert.equal(JSON.parse(await readFile(exported, 'utf8')).checks.find(check => check.id === 'edit-field-gap-1').relativeEdge, 'bottom');
+    assert.equal((await command('ready', '#demo-edit-dialog[open]')).ready, true);
+    const discovery = await command('discover', '#demo-edit-dialog[open]');
+    assert.equal(discovery.status, 'available');
+
     assert.deepEqual(comparisonAfter.comparison.measurements.map(({ actual }) => actual), [12, 12]);
     assert.deepEqual(gapChecks(comparisonAfter).map(check => check.status), ['pass', 'pass']);
     assert.deepEqual(comparisonAfter.comparison.measurements.map(({ check }) => check.status), ['pass', 'pass']);
@@ -428,6 +435,12 @@ test('agent controls the granted tab and measures an existing selection without 
     assert.equal(await page.locator(overlay).evaluate(el => getComputedStyle(el).visibility), 'visible');
     await command('compare', 'left', 'left', selectors[0], selectors[1]);
     assert.equal((await command('measure')).comparison.measurements[0].actual, 0);
+    await delay(1050);
+    const paired = await command('capture-pair', join(directory, 'paired'));
+    assert.equal(paired.report.context.route, '/demo');
+    assert.equal(paired.report.viewport.width, 360);
+    assert.notDeepEqual(await readFile(paired.ruler), await readFile(paired.clean));
+    assert.equal(await page.locator('[data-layout-witness-element]').count(), 1);
     await command('stop');
     if (screenshots) {
       await delay(1050);

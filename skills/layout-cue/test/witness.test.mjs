@@ -30,6 +30,54 @@ test('validates responsive rule bounds and relative edge comparisons', () => {
   assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'left', expected: 0, relativeTo: 'body', relativeEdge: 'top' }] }), /same axis/);
   assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'left', expected: 0, relativeEdge: 'right' }] }), /requires relativeTo/);
   assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'width', expected: 100, tolerence: 1 }] }), /Unknown field/);
+  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'height', expected: 10, pathname: '' }] }), /pathname/);
+  assert.throws(() => parseRules({ checks: [{ id: 'bad', selector: 'main', metric: 'height', expected: 10, whenVisible: '' }] }), /whenVisible/);
+});
+
+test('scopes checks to route and visible state, and measures clipped height against scrollports', { timeout: 20000 }, async () => {
+  const server = createServer((request, response) => response.writeHead(200, { 'content-type': 'text/html' }).end(`<style>body{margin:0}.scrollport{height:100px;overflow:auto}.target{height:40px;margin-top:80px}.target.clear{margin-top:20px}</style><main><button id="state" class="gate" hidden>Open</button><div class="scrollport"><div id="target" class="target">Target</div></div></main>`));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 320, height: 200 } });
+    await page.goto(`http://127.0.0.1:${server.address().port}/edit`);
+    const rules = parseRules({ checks: [
+      { id: 'edit-clipped', selector: '#target', metric: 'clipped-height', expected: 0, tolerance: 0, pathname: '/edit', whenVisible: '.gate' },
+      { id: 'missing-active-target', selector: '#missing', metric: 'visible-height', expected: 10, pathname: '/edit', whenVisible: '.gate' },
+      { id: 'other-route', selector: '#target', metric: 'clipped-height', expected: 0, pathname: '/other', whenVisible: '.gate' },
+    ] });
+    const sample = async () => page.evaluate(({ source, config }) => (0, eval)(`(${source})`)({ action: 'sample', config }), { source: inspectPage.toString(), config: rules });
+    let result = await sample();
+    assert.equal(result.checks.find(({ id }) => id === 'edit-clipped').status, 'skipped');
+    assert.equal(result.checks.find(({ id }) => id === 'other-route').status, 'skipped');
+
+    await page.locator('#state').evaluate(node => { node.hidden = false; });
+    result = await sample();
+    assert.equal(result.checks.find(({ id }) => id === 'missing-active-target').status, 'unavailable');
+    let clipped = result.checks.find(({ id }) => id === 'edit-clipped');
+    assert.equal(clipped.actual, 20);
+    assert.equal(clipped.status, 'fail');
+    assert.equal(result.checks.find(({ id }) => id === 'other-route').status, 'skipped');
+
+    await page.locator('#state').evaluate(node => node.after(node.cloneNode()));
+    result = await sample();
+    assert.equal(result.checks.find(({ id }) => id === 'edit-clipped').status, 'unavailable');
+    assert.match(result.checks.find(({ id }) => id === 'edit-clipped').reason, /multiple visible/);
+    await page.locator('#state + button').evaluate(node => node.remove());
+
+    await page.locator('#target').evaluate(node => node.classList.add('clear'));
+    result = await sample();
+    clipped = result.checks.find(({ id }) => id === 'edit-clipped');
+    assert.equal(clipped.actual, 0);
+    assert.equal(clipped.status, 'pass');
+    assert.equal(result.checks.find(({ id }) => id === 'missing-active-target').status, 'unavailable');
+  } finally {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('compares distinct source and target edges with durable 28 fail / 12 pass evidence', { timeout: 20000 }, async () => {

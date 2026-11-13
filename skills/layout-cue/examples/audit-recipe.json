@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "edit-workspace-mobile",
+  "route": "/?audit",
+  "state": "edit-initial",
+  "steps": [{ "click": "#demo-edit-open" }],
+  "ready": "#demo-edit-dialog[open]",
+  "target": "#demo-edit-save",
+  "viewport": { "width": 360, "height": 812 }
+}

@@ -379,6 +379,12 @@
     </dialog>
 
     <script>
+      if (new URLSearchParams(location.search).has('audit')) {
+        const auditStyles = document.createElement('link');
+        auditStyles.rel = 'stylesheet';
+        auditStyles.href = '/audit.css';
+        document.head.append(auditStyles);
+      }
       const editDialog = document.querySelector('#demo-edit-dialog');
       document.querySelector('#demo-edit-open').addEventListener('click', () => editDialog.showModal());
       document.querySelector('#demo-edit-cancel').addEventListener('click', () => editDialog.close());

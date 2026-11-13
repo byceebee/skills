@@ -30,12 +30,46 @@ Each check resolves exactly one visible element. Narrow selectors when a compone
 | `stroke-width` | Computed stroke width of the selected SVG node |
 | `horizontal-overflow` | Scroll width beyond the element's client width. This measures geometry even when local scrolling is intentional. Set an expected value of zero only where the layout contract requires it. |
 | `grid-column-count` | Number of rendered CSS Grid column tracks, including implicit and zero-width tracks |
+| `visible-height` | Target height remaining after intersecting its box with the viewport and ancestor vertical scrollports, in CSS pixels |
+| `clipped-height` | Target border-box height hidden by the viewport and ancestor vertical scrollports, in CSS pixels (`height - visible-height`) |
 
 Expected values and tolerances are numbers in CSS pixels. The default tolerance is 1 px. For strict SVG checks, select the shape with the stroke. A computed keyword such as `line-height: normal` is unavailable.
 
 For `grid-column-count`, use a whole number of tracks and an optional tolerance in tracks. The default is zero. Flex containers and track lists that the browser cannot resolve to pixel lengths, such as subgrid columns, are unavailable. Use width bounds to give the same container separate expectations at narrow and wide sizes.
 
-Use `--ready` for a selector that appears when the initial page is ready to inspect. Watch mode samples the state you open in its browser. Capture mode opens a fresh page for each width and theme. The report lists pass, fail, and unavailable checks. Capture with `--strict` exits with a failure status when any configured measurement fails or is unavailable.
+## Route and UI-state scoped checks
+
+Add `pathname` to apply a check only when `location.pathname` exactly matches the configured path. Query strings and fragments are not part of this comparison. A route mismatch is reported as `skipped`, so it does not count as a failed or unavailable measurement.
+
+Add `whenVisible` with a selector for a UI state marker, such as the open dialog or expanded filter panel. If the selector has no visible match, the check is `skipped`; when it has more than one visible match, the check is `unavailable` because the state is ambiguous. When the gate is visible, the regular `selector` must still resolve to exactly one visible target. A missing target in that active state is `unavailable`, which makes conditional markup regressions visible.
+
+```json
+{
+  "checks": [
+    {
+      "id": "edit-dialog-footer-visible-height",
+      "selector": "[role=dialog][data-state=open] .dialog-footer",
+      "metric": "visible-height",
+      "expected": 56,
+      "tolerance": 1,
+      "pathname": "/projects/42/edit",
+      "whenVisible": "[role=dialog][data-state=open]"
+    },
+    {
+      "id": "filter-chip-clipping",
+      "selector": ".filter-chip-list",
+      "metric": "clipped-height",
+      "expected": 0,
+      "tolerance": 0,
+      "whenVisible": ".filter-panel[aria-expanded=true]"
+    }
+  ]
+}
+```
+
+`visible-height` and `clipped-height` account for the viewport and ancestor elements whose vertical overflow clips or scrolls. They describe rectangular geometry, not whether clipped content can be reached by scrolling, nor occlusion by another element, masks, or clip paths. For an intentionally scrollable panel, check that the relevant controls can be revealed and activated; do not treat clipping alone as a defect.
+
+Use `--ready` for a selector that appears when the initial page is ready to inspect. Watch mode samples the state you open in its browser. Capture mode opens a fresh page for each width and theme. A check can pass, fail, be unavailable, or be skipped. Capture with `--strict` exits with a failure status when any configured measurement fails or is unavailable.
 
 
 ## Relative alignment checks

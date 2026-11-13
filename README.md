@@ -1,4 +1,4 @@
-# CeeBee Skills
+# byceebee skills
 
 Agent skills from [byceebee](https://ceebee.biz.id).
 
@@ -37,9 +37,7 @@ node scripts/agent.mjs click '[aria-label="Open details"]'
 node scripts/agent.mjs start
 node scripts/agent.mjs select 'header [aria-label="Search"]'
 node scripts/agent.mjs measure
-node scripts/agent.mjs capture ./ruler.jpg
-node scripts/agent.mjs stop
-node scripts/agent.mjs capture-clean ./clean.jpg
+node scripts/agent.mjs capture-pair ./search
 ```
 
 Run `measure` again after a CSS edit. The selected element and its guides stay in the same tab during development. The connection uses Node.js 22+ and Chrome 116+. It stays on the local machine and ends when the connected tab changes origin or closes. See the [skill instructions](skills/layout-cue/SKILL.md) for every command.
@@ -52,31 +50,34 @@ npx skills add byceebee/skills --skill layout-cue
 
 You can also copy the entire `skills/layout-cue` directory into your agent's skills folder. Follow the [skill instructions](skills/layout-cue/SKILL.md) for browser and optional CLI setup.
 
+## Try a layout regression
+
+The included demo has a workspace, a form dialog, and a deliberate regression. At **360 × 812 CSS px**, the Save action starts below the dialog's visible area. The **8 px** gap between the actions still passes.
+
+1. From `skills/layout-cue`, run `node examples/serve.mjs` and open [the audit demo](http://127.0.0.1:4173/?audit).
+2. Set the tab to **360 × 812 CSS px** with your browser's viewport tools. Connect Layout Cue to this tab and keep it in the foreground.
+3. Import the demo rules and run the before phase.
+
+```sh
+node scripts/agent.mjs import examples/audit-rules.json
+node scripts/replay.mjs examples/audit-recipe.json before ./audit-evidence
+```
+
+The imported rule measures Save clipping. For a separate scan of possible layout issues in the open dialog, run `node scripts/agent.mjs discover '#demo-edit-dialog[open]'`.
+
+In [audit.css](skills/layout-cue/examples/audit.css), replace `max-height: 354px` with `max-height: calc(100dvh - 32px)`. Run the same recipe again. The Save visibility check should now pass, and the action gap should still measure **8 px**.
+
+```sh
+node scripts/replay.mjs examples/audit-recipe.json after ./audit-evidence
+node scripts/agent.mjs export-rules ./audit-rules-export.json
+```
+
+Each phase writes a ruler screenshot, clean screenshot, and measurement JSON. The after manifest reports the check deltas and whether the viewport, theme, route, and scroll position matched. To try the live two-element ruler, choose **Compare spacing** in the extension popup, click the first element, then hover and click the second.
+
+[Live inspection and replay guide](skills/layout-cue/references/live-inspection.md) · [Rules reference](skills/layout-cue/references/rules.md)
+
 ## Optional unattended captures
 
-The CLI remains available for scripted capture runs that need a fresh browser context and Playwright. Manual extension use runs directly in Chrome. The local agent connection uses Node.js. Playwright is needed for this separate capture workflow.
-
-<details>
-<summary>Try the included demo</summary>
-
-Clone this repository and run these commands from `skills/layout-cue`.
-
-```sh
-npm ci
-npx --no-install playwright install chromium
-node examples/serve.mjs
-```
-
-In another terminal in the same directory, run the live inspector.
-
-```sh
-node scripts/witness.mjs watch http://127.0.0.1:4173 --config examples/rules.json
-```
-
-Edit a spacing value in the demo and reload the page in the inspector window. The guide follows the new geometry, and the reported evidence directory contains the updated overlay and JSON. Use `capture` with `--strict` to review desktop and mobile in both themes.
-
-</details>
-
-The [rules reference](skills/layout-cue/references/rules.md) shows how to define regions and checks for your app.
+Use [the separate Playwright capture workflow](skills/layout-cue/SKILL.md#optional-unattended-captures) for fresh browser contexts across widths and themes. The Chrome extension and its local agent commands run without Playwright.
 
 [MIT license](LICENSE)

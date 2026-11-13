@@ -13,7 +13,7 @@ const defaultSessionFile = resolve(homedir(), '.layout-witness', 'agent.json');
 const nativeSessionFile = resolve(process.env.LAYOUT_WITNESS_NATIVE_SESSION ?? resolve(homedir(), '.layout-witness', 'native-agent.json'));
 const sessionFile = resolve(process.env.LAYOUT_WITNESS_SESSION ?? defaultSessionFile);
 const allowedActions = new Set([
-  'status', 'start', 'capture', 'capture-clean', 'navigate', 'click', 'stop', 'measure', 'pick', 'select', 'compare', 'related', 'save-check', 'clear', 'import', 'defaults', 'disconnect',
+  'status', 'start', 'capture', 'capture-clean', 'capture-matched-clean', 'ready', 'discover', 'export-rules', 'navigate', 'click', 'stop', 'measure', 'pick', 'select', 'compare', 'related', 'save-check', 'clear', 'import', 'defaults', 'disconnect',
 ]);
 const payloadLimit = 256 * 1024;
 const responseLimit = 8 * 1024 * 1024;
@@ -23,6 +23,10 @@ const help = `Usage:
   node scripts/agent.mjs status|stop|measure|pick|clear|defaults|disconnect
   node scripts/agent.mjs start [css-selector]
   node scripts/agent.mjs capture|capture-clean <output.jpg>
+  node scripts/agent.mjs capture-pair <output-stem>
+  node scripts/agent.mjs ready <css-selector>
+  node scripts/agent.mjs discover <css-selector> [tokens.json]
+  node scripts/agent.mjs export-rules <output.json>
   node scripts/agent.mjs navigate <url-or-route>
   node scripts/agent.mjs click <css-selector>
   node scripts/agent.mjs select <css-selector>
@@ -37,6 +41,15 @@ function fail(message) {
 
 function parseArguments(args) {
   const [command, ...rest] = args;
+  if (command === 'capture-pair') {
+    if (rest.length !== 1 || !rest[0].trim()) fail('Capture-pair needs one output stem.');
+    return { command, argument: rest[0] };
+  }
+  if (command === 'discover') {
+    if (rest.length < 1 || rest.length > 2 || !rest[0].trim()) fail('Discover needs one selector and optional token file.');
+    return { command, argument: { selector: rest[0], tokenFile: rest[1] } };
+  }
+  if (command === 'export-rules' && (rest.length !== 1 || !/\.json$/i.test(rest[0]))) fail('Export-rules needs one .json output path.');
   if (!command || !allowedActions.has(command) && command !== 'serve') fail(help);
   if (command === 'compare') {
     const focus = rest.at(-1) === '--focus';
@@ -56,13 +69,19 @@ function parseArguments(args) {
   if (command === 'related' && (rest.length !== 1 || !['parent', 'child', 'previous', 'next'].includes(rest[0]))) {
     fail('Related needs parent, child, previous, or next.');
   }
-  if (['select', 'click'].includes(command) && rest.length !== 1) fail(`${command} needs one CSS selector.`);
+  if (['select', 'click', 'ready'].includes(command) && rest.length !== 1) fail(`${command} needs one CSS selector.`);
   if (command === 'navigate' && rest.length !== 1) fail('navigate needs one URL or route.');
   if (command === 'import' && rest.length !== 1) fail('import needs one rules file.');
   if (command === 'start' && rest.length > 1) fail('start accepts at most one CSS selector.');
   if (['capture', 'capture-clean'].includes(command) && (rest.length !== 1 || !/\.jpe?g$/i.test(rest[0]))) fail(`${command} needs one .jpg output path.`);
-  if (!['start', 'select', 'click', 'related', 'navigate', 'import', 'capture', 'capture-clean'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
+  if (!['start', 'select', 'click', 'related', 'navigate', 'import', 'capture', 'capture-clean', 'ready', 'export-rules'].includes(command) && rest.length) fail(`${command} takes no arguments.`);
   return { command, argument: rest[0] };
+}
+
+function screenshotBytes(result) {
+  const prefix = 'data:image/jpeg;base64,';
+  if (!result.jpeg?.startsWith(prefix)) fail('No screenshot was received.');
+  return Buffer.from(result.jpeg.slice(prefix.length), 'base64');
 }
 
 async function sendCommand(command, argument) {
@@ -98,28 +117,79 @@ async function sendCommand(command, argument) {
     label = rulesPath.split(/[\\/]/).at(-1);
   }
 
+  let tokens;
+  if (command === 'discover' && argument.tokenFile) {
+    if ((await stat(argument.tokenFile)).size > payloadLimit) fail('Use a token file smaller than 256 KB.');
+    tokens = JSON.parse(await readFile(argument.tokenFile, 'utf8'));
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), responseTimeoutMs + 2_000);
   try {
-    const response = await fetch(`http://127.0.0.1:${session.port}/command`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${session.token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: command,
-        ...(['start', 'select', 'click'].includes(command) && argument !== undefined ? { selector: argument } : {}),
+    async function request(action, fields) {
+      const response = await fetch(`http://127.0.0.1:${session.port}/command`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${session.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action, ...fields }),
+        signal: controller.signal,
+      });
+      const result = await response.json();
+      if (!response.ok) fail(result.error ?? `Agent command failed with HTTP ${response.status}.`);
+      return result;
+    }
+
+    if (command === 'capture-pair') {
+      const before = await request('capture');
+      // Chrome caps visible-tab captures at two per second, including previous commands.
+      await new Promise(resolve => setTimeout(resolve, 1050));
+      const after = await request('capture-matched-clean');
+      const comparable = ({ context, viewport, theme, checks, element, comparison }) => ({
+        context, viewport, theme, checks, element, comparison,
+      });
+      if (!before.report?.context || !after.report?.context ||
+        JSON.stringify(comparable(before.report)) !== JSON.stringify(comparable(after.report))) {
+        fail('The audit state changed between screenshots. Capture again after the layout settles.');
+      }
+      const stem = resolve(argument);
+      const files = {
+        ruler: [`${stem}-ruler.jpg`, screenshotBytes(before)],
+        clean: [`${stem}-clean.jpg`, screenshotBytes(after)],
+        measurement: [`${stem}.json`, `${JSON.stringify(before.report, null, 2)}\n`],
+      };
+      const written = [];
+      try {
+        for (const [path, data] of Object.values(files)) {
+          await writeFile(path, data, { flag: 'wx', mode: 0o600 });
+          written.push(path);
+        }
+      } catch (error) {
+        await Promise.all(written.map(path => rm(path, { force: true })));
+        throw error;
+      }
+      const paths = Object.fromEntries(Object.entries(files).map(([key, [path]]) => [key, path]));
+      process.stdout.write(`${JSON.stringify({ ...paths, report: before.report }, null, 2)}\n`);
+      return;
+    }
+
+    const result = await request(command, {
+        ...(['start', 'select', 'click', 'ready'].includes(command) && argument !== undefined ? { selector: argument } : {}),
         ...(command === 'compare' ? { comparison: argument } : {}),
         ...(command === 'save-check' ? { check: argument } : {}),
         ...(command === 'related' ? { relation: argument } : {}),
         ...(command === 'navigate' ? { url: argument } : {}),
         ...(command === 'import' ? { rules, label } : {}),
-      }),
-      signal: controller.signal,
+        ...(command === 'discover' ? { selector: argument.selector, tokens } : {}),
     });
-    const result = await response.json();
-    if (!response.ok) fail(result.error ?? `Agent command failed with HTTP ${response.status}.`);
+
+    if (command === 'export-rules') {
+      if (!result.rules) fail('No rule configuration was returned.');
+      const output = resolve(argument);
+      await writeFile(output, `${JSON.stringify(result.rules, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      process.stdout.write(`${JSON.stringify({ output }, null, 2)}\n`);
+      return;
+    }
 
     if (command === 'measure') {
       if (!result.report) fail('Layout guides are off. Run `node scripts/agent.mjs start` before measuring.');
