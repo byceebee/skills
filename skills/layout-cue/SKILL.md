@@ -28,6 +28,23 @@ Load the complete `layout-cue` skill directory as an unpacked extension from `ch
 
 For manual pairing, run `node "$WITNESS_DIR/scripts/agent.mjs" serve` in a persistent terminal and use **Pairing URL (manual connection)** and **Connect agent** in the popup.
 
+## Pair a local tab without the popup
+
+For localhost development an agent can pair the native host from a page instead of asking someone to click the popup:
+
+```sh
+PORT=4330 node "$WITNESS_DIR/scripts/agent-pair-page.mjs" &
+# Open http://127.0.0.1:4319 in Chrome, then open
+# http://127.0.0.1:4330/ in that same Chrome profile using a browser tool.
+node "$WITNESS_DIR/scripts/agent.mjs" status
+```
+
+The pairing page must be opened by a browser tool, not by `agent.mjs navigate`: until pairing succeeds there is no agent session, so every CLI command fails. The page sends `auto-pair` to the extension over `externally_connectable`; the extension binds its native host to a tab on the target origin and writes the agent session file. `#result[data-ok="true"]` confirms it.
+
+The page derives the extension ID from this skill's installed directory using Chrome's unpacked-extension rule. If the extension was loaded from a different path, pass `?ext=<extension-id>` from `chrome://extensions`. The default target is `http://127.0.0.1:4319`; `?target=` is optional and may be redacted by browser tooling. With several tabs on the audit origin, pass `?tab=<chrome-tab-id>` to choose one; otherwise the first matching tab is used. The audit tab need not be foregrounded for pairing.
+
+Only `http://127.0.0.1:4330` may send the external message. `http://127.0.0.1:4319` is a read-only host permission used to find and inspect the audit tab; it cannot send `auto-pair`. To use other localhost ports, add the sender port to `externally_connectable` and `agentPairOrigins`, the audit port to `host_permissions` and `auditOrigins`, then reload the extension. Screenshots still require the paired tab in the foreground; live `measure` works in the background.
+
 ```sh
 node "$WITNESS_DIR/scripts/agent.mjs" navigate /dashboard
 # Once the route is ready, open the audit state using a unique visible control.

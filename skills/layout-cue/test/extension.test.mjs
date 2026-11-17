@@ -13,6 +13,10 @@ import { chromium } from 'playwright';
 
 const skillDirectory = fileURLToPath(new URL('../', import.meta.url));
 const overlay = '[data-layout-witness]';
+function assertPairingHostPermissions(manifest) {
+  assert.deepEqual(manifest.host_permissions ?? [], ['http://127.0.0.1:4319/*']);
+  assert.deepEqual(manifest.optional_host_permissions ?? [], []);
+}
 
 async function downloadReport(popup) {
   const event = popup.waitForEvent('download');
@@ -25,7 +29,7 @@ async function downloadReport(popup) {
 test('inspects the existing tab and restores its guides only on the same origin', { timeout: 35000 }, async () => {
   const fixture = await readFile(join(skillDirectory, 'examples/demo.html'), 'utf8');
   const manifest = JSON.parse(await readFile(join(skillDirectory, 'manifest.json'), 'utf8'));
-  assert.ok(!manifest.host_permissions && !manifest.optional_host_permissions);
+  assertPairingHostPermissions(manifest);
   const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'text/html' }).end(fixture);
   });
@@ -205,7 +209,7 @@ test('inspects the existing tab and restores its guides only on the same origin'
 test('popup comparison picker previews and pins a two-element gap', { timeout: 30000 }, async () => {
   const fixture = await readFile(join(skillDirectory, 'examples/demo.html'), 'utf8');
   const manifest = JSON.parse(await readFile(join(skillDirectory, 'manifest.json'), 'utf8'));
-  assert.ok(!manifest.host_permissions && !manifest.optional_host_permissions);
+  assertPairingHostPermissions(manifest);
   const server = createServer((request, response) => response.writeHead(200, { 'content-type': 'text/html' }).end(fixture));
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   let context;

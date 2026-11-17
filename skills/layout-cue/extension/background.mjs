@@ -1,5 +1,6 @@
 import { inspectPage } from '../scripts/measure.mjs';
 import { parseRules } from '../scripts/rules.mjs';
+import { isAllowedAuditOrigin } from '../scripts/pairing.mjs';
 import { discoverLayout } from '../scripts/discover.mjs';
 import { inspectElement } from './element.mjs';
 import { agentConnected, connectAgent, connectNativeAgent, disconnectAgent } from './agent.mjs';
@@ -290,6 +291,42 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (sender.url !== chrome.runtime.getURL('extension/popup.html')) return false;
   inOrder(message.tabId, () => handleMessage(message)).then(
+    (value) => respond({ value }),
+    (error) => respond({ error: error.message }),
+  );
+  return true;
+});
+
+const agentPairOrigins = new Set(['http://127.0.0.1:4330']);
+const auditOrigins = new Set(['http://127.0.0.1:4319']);
+
+chrome.runtime.onMessageExternal.addListener((message, sender, respond) => {
+  if (message?.action !== 'auto-pair' || !agentPairOrigins.has(sender.origin)) return false;
+  let targetOrigin;
+  try { targetOrigin = new URL(message.target).origin; } catch {
+    respond({ error: 'Invalid audit target.' });
+    return true;
+  }
+  if (!auditOrigins.has(targetOrigin)) {
+    respond({ error: 'Audit origin is not allowed.' });
+    return true;
+  }
+  void (async () => {
+    let tab;
+    if (Number.isInteger(message.tabId)) {
+      tab = await chrome.tabs.get(message.tabId);
+    } else {
+      const tabs = await chrome.tabs.query({ url: `${targetOrigin}/*` });
+      tab = tabs.find((item) => item.id !== sender.tab?.id);
+    }
+    if (!tab || tab.id === sender.tab?.id || !isAllowedAuditOrigin(tab.url, auditOrigins)) {
+      throw new Error('No matching audit tab was found.');
+    }
+    const origin = tabOrigin(tab.url);
+    const runAgentCommand = (request) => inOrder(tab.id, () => handleMessage({ ...request, tabId: tab.id }, origin));
+    await connectNativeAgent(tab.id, origin, runAgentCommand);
+    return { ok: true, tabId: tab.id, origin };
+  })().then(
     (value) => respond({ value }),
     (error) => respond({ error: error.message }),
   );

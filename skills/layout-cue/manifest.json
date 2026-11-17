@@ -9,6 +9,14 @@
     "scripting",
     "storage"
   ],
+  "externally_connectable": {
+    "matches": [
+      "http://127.0.0.1:4330/*"
+    ]
+  },
+  "host_permissions": [
+    "http://127.0.0.1:4319/*"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:*;"
   },
